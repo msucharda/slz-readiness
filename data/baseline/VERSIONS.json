@@ -1,7 +1,7 @@
 {
   "plugin": {
-    "version": "0.3.0",
-    "changelog": "v0.3.0 \u2014 cross-platform: Python hooks (no bash dep on Windows); shutil.which for az; skills document python -m invocation; CI matrix on ubuntu/windows/macos"
+    "version": "0.4.0",
+    "changelog": "v0.4.0 \u2014 Discover enforces explicit tenant+subscription scope; subprocess timeouts; per-stage progress feedback"
   },
   "_comment": "Baseline source: Azure-Landing-Zones-Library contains both ALZ and SLZ platform trees. Pinned to the latest main commit at implementation start (2026-04-16) and refreshed on a quarterly cadence. Every file in data/baseline/ must match its upstream SHA \u2014 verified by scripts/slz_readiness/evaluate/baseline_integrity.py.",
   "alz_library": {
