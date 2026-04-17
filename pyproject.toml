@@ -31,6 +31,7 @@ dev = [
 slz-evaluate = "slz_readiness.evaluate.cli:main"
 slz-discover = "slz_readiness.discover.cli:main"
 slz-scaffold = "slz_readiness.scaffold.cli:main"
+slz-plan-summary = "slz_readiness.plan.summary_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["scripts"]

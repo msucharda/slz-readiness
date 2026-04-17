@@ -26,13 +26,23 @@ Produce `artifacts/<run>/plan.md` and `plan.json`.
 
 ## Procedure
 1. Load `gaps.json`. Group gaps by `design_area`.
-2. For each group, use the `sequential-thinking` tool to order gaps by
+2. **Generate the deterministic snapshot first**:
+   ```bash
+   slz-plan-summary --gaps artifacts/<run>/gaps.json
+   ```
+   (or `python -m slz_readiness.plan.summary_cli --gaps …`)
+   This writes `plan.summary.{json,md}` with readiness snapshot, order of
+   operations, and discovery blind spots. Cite or relay numbers from this
+   file — do not compute totals yourself. The file is outside the scope of
+   the post-tool-use citation guard (it only filters `plan.md`).
+3. For each group, use the `sequential-thinking` tool to order gaps by
    dependency (e.g. create MG hierarchy before assigning policies).
-3. Write `plan.md`:
-   - Intro (one paragraph, no new rules).
+4. Write `plan.md`:
+   - Intro (one paragraph, no new rules). Reference `plan.summary.md` for
+     numeric snapshot.
    - One H2 per design_area.
    - Ordered bullets, each citing `rule_id` and the `baseline_ref` path@sha.
-4. Write `plan.json`: same content, structured.
+5. Write `plan.json`: same content, structured.
 
 ## Hand-off
 `slz-scaffold` reads `gaps.json` + `plan.json` and emits Bicep templates.

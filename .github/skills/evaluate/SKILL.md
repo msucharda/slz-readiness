@@ -22,7 +22,10 @@ Produce `artifacts/<run>/gaps.json`.
 ## Procedure
 1. `slz-evaluate --findings artifacts/<run>/findings.json --out artifacts/<run>/gaps.json`
    (or the portable form: `python -m slz_readiness.evaluate.cli --findings … --out …`)
-2. Print: total gaps, count by severity, count by design-area.
+2. The CLI also writes `evaluate.summary.{json,md}` next to `gaps.json` with
+   totals, by-severity, by-design-area, compliance ratio (passed/failed/unknown)
+   and the top largest gaps. **Read `evaluate.summary.md` and relay it
+   verbatim** — do NOT re-derive the numbers yourself.
 3. If zero gaps, tell the user they are compliant against the vendored baseline
    and suggest re-running after the next baseline refresh.
 

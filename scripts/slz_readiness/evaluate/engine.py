@@ -11,7 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .. import _trace
+from .. import _summary, _trace
 from .loaders import Rule, load_all_rules
 from .matchers import get_matcher
 from .models import Gap
@@ -48,7 +48,37 @@ def _unknown_gap_from_finding(rule: Rule, finding: dict[str, Any]) -> Gap:
     )
 
 
-def evaluate(findings: list[dict[str, Any]], rules: list[Rule] | None = None) -> list[Gap]:
+def _tally_bump(tally_out: dict[str, Any] | None, *, passed: bool, status: str) -> None:
+    """Bump counters in ``tally_out`` without allocating when ``None``.
+
+    The dict is shaped for direct embedding in ``evaluate.summary.json``:
+    ``{rules_evaluated, rules_passed, rules_failed, rules_unknown}``.
+    """
+    if tally_out is None:
+        return
+    tally_out["rules_evaluated"] = tally_out.get("rules_evaluated", 0) + 1
+    if status == "unknown":
+        tally_out["rules_unknown"] = tally_out.get("rules_unknown", 0) + 1
+    elif passed:
+        tally_out["rules_passed"] = tally_out.get("rules_passed", 0) + 1
+    else:
+        tally_out["rules_failed"] = tally_out.get("rules_failed", 0) + 1
+
+
+def evaluate(
+    findings: list[dict[str, Any]],
+    rules: list[Rule] | None = None,
+    *,
+    tally_out: dict[str, Any] | None = None,
+) -> list[Gap]:
+    """Run every rule over ``findings`` and return gaps.
+
+    Optional ``tally_out`` is populated in-place with ``rules_evaluated`` /
+    ``rules_passed`` / ``rules_failed`` / ``rules_unknown`` counters so the
+    caller can summarise the run without re-iterating. Pure function; no
+    side effects other than ``_trace.log`` (which is itself a no-op outside a
+    tracer context).
+    """
     rules = rules if rules is not None else load_all_rules()
     gaps: list[Gap] = []
 
@@ -69,6 +99,7 @@ def evaluate(findings: list[dict[str, Any]], rules: list[Rule] | None = None) ->
                 passed=False,
                 status="unknown",
             )
+            _tally_bump(tally_out, passed=False, status="unknown")
             gaps.append(gap)
 
         target_findings = ok_findings
@@ -93,6 +124,7 @@ def evaluate(findings: list[dict[str, Any]], rules: list[Rule] | None = None) ->
                 passed=passed,
                 status=("compliant" if passed else "missing"),
             )
+            _tally_bump(tally_out, passed=passed, status=("compliant" if passed else "missing"))
             if not passed:
                 gaps.append(
                     Gap(
@@ -121,6 +153,7 @@ def evaluate(findings: list[dict[str, Any]], rules: list[Rule] | None = None) ->
                 passed=passed,
                 status=("compliant" if passed else "missing"),
             )
+            _tally_bump(tally_out, passed=passed, status=("compliant" if passed else "missing"))
             if not passed:
                 gaps.append(
                     Gap(
@@ -149,20 +182,183 @@ def gap_to_dict(g: Gap) -> dict[str, Any]:
 
 def run(findings_path: Path, gaps_path: Path) -> int:
     findings = json.loads(findings_path.read_text(encoding="utf-8"))
-    if isinstance(findings, dict) and "findings" in findings:
-        findings = findings["findings"]
+    run_scope: dict[str, Any] = {}
+    if isinstance(findings, dict):
+        run_scope = findings.get("run_scope") or {}
+        if "findings" in findings:
+            findings = findings["findings"]
+    tally: dict[str, Any] = {
+        "rules_evaluated": 0,
+        "rules_passed": 0,
+        "rules_failed": 0,
+        "rules_unknown": 0,
+    }
     with _trace.tracer(gaps_path.parent, phase="evaluate"):
         _trace.log("evaluate.begin", findings=len(findings))
-        gaps = evaluate(findings)
+        gaps = evaluate(findings, tally_out=tally)
         _trace.log("evaluate.end", gap_count=len(gaps))
-    gaps_path.parent.mkdir(parents=True, exist_ok=True)
-    gaps_path.write_text(
-        json.dumps(
-            {"gaps": [gap_to_dict(g) for g in gaps]},
-            indent=2,
-            sort_keys=True,
+        gaps_path.parent.mkdir(parents=True, exist_ok=True)
+        gap_dicts = [gap_to_dict(g) for g in gaps]
+        gaps_path.write_text(
+            json.dumps(
+                {"gaps": gap_dicts},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
         )
-        + "\n",
-        encoding="utf-8",
-    )
+        _write_evaluate_summary(
+            run_dir=gaps_path.parent,
+            run_scope=run_scope,
+            gaps=gap_dicts,
+            tally=tally,
+            findings_count=len(findings),
+        )
     return 0 if not gaps else 1  # non-zero on gaps so CI + pipelines notice
+
+
+def _top_largest_gaps(gaps: list[dict[str, Any]], n: int = 5) -> list[dict[str, Any]]:
+    """Rank gaps by ``len(observed.missing)`` descending; ties by rule_id."""
+    def _missing_count(g: dict[str, Any]) -> int:
+        obs = g.get("observed")
+        if isinstance(obs, dict):
+            missing = obs.get("missing")
+            if isinstance(missing, list):
+                return len(missing)
+        return 0
+    ranked = sorted(
+        gaps,
+        key=lambda g: (-_missing_count(g), g.get("rule_id", ""), g.get("resource_id", "")),
+    )
+    return [g for g in ranked if _missing_count(g) > 0][:n]
+
+
+def _write_evaluate_summary(
+    *,
+    run_dir: Path,
+    run_scope: dict[str, Any],
+    gaps: list[dict[str, Any]],
+    tally: dict[str, Any],
+    findings_count: int,
+) -> None:
+    sev = _summary.severity_tally(gaps)
+    areas = _summary.design_area_tally(gaps)
+    statuses = _summary.status_tally(gaps)
+    unknowns = _summary.unknown_gaps(gaps)
+    largest = _top_largest_gaps(gaps)
+
+    payload = {
+        "phase": "evaluate",
+        "tenant_id": run_scope.get("tenant_id"),
+        "findings_count": findings_count,
+        "gap_count": len(gaps),
+        "by_severity": sev,
+        "by_design_area": areas,
+        "by_status": statuses,
+        "compliance": tally,
+        "top_largest_gaps": [
+            {
+                "rule_id": g.get("rule_id"),
+                "resource_id": g.get("resource_id"),
+                "missing_count": len((g.get("observed") or {}).get("missing") or []),
+            }
+            for g in largest
+        ],
+        "unknown_gaps": [
+            {
+                "rule_id": g.get("rule_id"),
+                "resource_id": g.get("resource_id"),
+                "error": (g.get("observed") or {}).get("error"),
+            }
+            for g in unknowns
+        ],
+    }
+    _summary.write_json(run_dir / "evaluate.summary.json", payload)
+
+    parts: list[str] = []
+    parts.append(
+        _summary.header_block(
+            "SLZ Evaluate summary",
+            tenant=run_scope.get("tenant_id"),
+            run_id=_summary.run_id_from_path(run_dir),
+        )
+    )
+    parts.append(
+        f"**Gaps:** {len(gaps)} across {findings_count} findings. "
+        f"Rules: {tally['rules_passed']} passed / {tally['rules_failed']} failed / "
+        f"{tally['rules_unknown']} unknown of {tally['rules_evaluated']} evaluated."
+    )
+    parts.append("")
+    parts.append("## By severity")
+    parts.append("")
+    parts.append(
+        _summary.render_table(
+            ["Severity", "Count"],
+            [[k, sev[k]] for k in sev if sev[k] > 0] or [["(none)", 0]],
+        )
+    )
+    parts.append("")
+    parts.append("## By design area")
+    parts.append("")
+    parts.append(
+        _summary.render_table(
+            ["Design area", "Count"],
+            [[k, areas[k]] for k in areas] or [["(none)", 0]],
+        )
+    )
+    parts.append("")
+    parts.append("## By status")
+    parts.append("")
+    parts.append(
+        _summary.render_table(
+            ["Status", "Count"],
+            [[k, statuses[k]] for k in statuses if statuses[k] > 0] or [["(none)", 0]],
+        )
+    )
+    parts.append("")
+    if largest:
+        parts.append("## Top gaps by missing count")
+        parts.append("")
+        parts.append(
+            _summary.render_table(
+                ["rule_id", "resource_id", "Missing items"],
+                [
+                    [
+                        g.get("rule_id", ""),
+                        g.get("resource_id", ""),
+                        len((g.get("observed") or {}).get("missing") or []),
+                    ]
+                    for g in largest
+                ],
+            )
+        )
+        parts.append("")
+    if unknowns:
+        parts.append("## Unknown (discovery blocked)")
+        parts.append("")
+        parts.append(
+            "These rules could not be evaluated because discovery failed; "
+            "re-run with elevated access to resolve."
+        )
+        parts.append("")
+        parts.append(
+            _summary.render_table(
+                ["rule_id", "resource_id", "Error"],
+                [
+                    [
+                        g.get("rule_id", ""),
+                        g.get("resource_id", ""),
+                        (g.get("observed") or {}).get("error", ""),
+                    ]
+                    for g in unknowns
+                ],
+            )
+        )
+        parts.append("")
+    parts.append("## See also")
+    parts.append("")
+    parts.append("- `gaps.json` — full gap list with baseline citations")
+    parts.append("- `trace.jsonl` — `rule.fire` events for every rule evaluated")
+    _summary.write_md(run_dir / "evaluate.summary.md", "\n".join(parts))
+    _trace.log("evaluate.summary", gap_count=len(gaps), **tally)

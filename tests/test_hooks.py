@@ -74,3 +74,32 @@ def test_main_allow_returns_0(monkeypatch):
         sys, "stdin", io.StringIO(json.dumps({"command": "az account show"}))
     )
     assert hook.main() == 0
+
+
+# --- post_tool_use.py ----------------------------------------------------
+
+POST_HOOK = Path(__file__).resolve().parents[1] / "hooks" / "post_tool_use.py"
+
+
+def _load_post():
+    spec = importlib.util.spec_from_file_location("post_tool_use_hook", POST_HOOK)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
+post_hook = _load_post()
+
+
+def test_plan_summary_not_filtered(tmp_path):
+    """The citation guard must NOT match plan.summary.md - it only targets plan.md."""
+    p = tmp_path / "plan.summary.md"
+    p.write_text("- bullet with no citation\n", encoding="utf-8")
+    assert post_hook._extract_plan_path({"output_path": str(p)}) is None
+
+
+def test_plan_md_still_matches(tmp_path):
+    p = tmp_path / "plan.md"
+    p.write_text("- bullet\n", encoding="utf-8")
+    assert post_hook._extract_plan_path({"output_path": str(p)}) == p

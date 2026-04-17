@@ -43,5 +43,12 @@ and `artifacts/<run>/scaffold.manifest.json`.
                 --params artifacts/<run>/scaffold.params.json \
                 --out    artifacts/<run>
    ```
-4. Show the `scaffold.manifest.json` to the user and remind them to run
-   `az deployment mg what-if …` before any `create`.
+4. The CLI writes `scaffold.summary.{json,md}` next to the manifest with:
+   emitted-template table (with rule_ids closed), warnings, a "Gaps NOT
+   scaffolded" section, and per-template `az deployment mg what-if`/`create`
+   commands in dependency order. **Show `scaffold.summary.md` to the user
+   verbatim** — it already contains the manifest content and the what-if
+   reminder; do not paraphrase.
+5. If all four phase summaries are present in the run dir, the CLI also
+   writes `run.summary.md` — a concatenated roll-up suitable for sharing
+   with stakeholders who didn't watch the live run.

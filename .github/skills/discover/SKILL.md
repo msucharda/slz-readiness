@@ -69,7 +69,11 @@ The CLI **validates** that:
 All internal commands use `list` / `show` / `graph query` only.
 
 ### 5. Print a one-line summary
-Number of findings and the output path (the CLI does this already).
+Number of findings and the output path (the CLI does this already). The CLI
+also writes `artifacts/<run>/discover.summary.{json,md}` — a human-readable
+per-module status table plus "top observations" and caveats. **Read
+`discover.summary.md` and relay it verbatim** to the user before handing off
+to evaluate; do not re-derive the numbers.
 
 ## Scope metadata
 
