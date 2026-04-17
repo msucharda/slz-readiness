@@ -11,10 +11,17 @@ than reporting the scope as compliant.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from typing import Any
 
 from .. import _trace
+
+# Resolve `az` via PATHEXT-aware lookup so Windows finds `az.cmd`.
+# subprocess.run with argv list and shell=False does not honour PATHEXT on
+# Windows; shutil.which does. Fall back to the bare name for environments
+# that inject az only into the subprocess PATH.
+_AZ = shutil.which("az") or "az"
 
 
 class AzError(RuntimeError):
@@ -52,7 +59,7 @@ def run_az(args: list[str]) -> Any:
     Raises ``AzError`` with a classified ``kind`` on non-zero exit. Writes a
     trace line for both success and failure if a tracer is active.
     """
-    cmd = ["az", *args, "-o", "json"]
+    cmd = [_AZ, *args, "-o", "json"]
     res = subprocess.run(cmd, check=False, capture_output=True, text=True)  # noqa: S603
     if res.returncode != 0:
         kind = _classify(res.stderr, res.returncode)

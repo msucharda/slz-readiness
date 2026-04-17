@@ -75,7 +75,8 @@ def verify_clean_tree() -> None:
 
 
 def tag_exists(tag: str) -> bool:
-    return run("git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}", check=False).returncode == 0
+    result = run("git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}", check=False)
+    return result.returncode == 0
 
 
 def main() -> int:

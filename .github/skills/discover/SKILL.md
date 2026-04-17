@@ -26,6 +26,11 @@ Produce `artifacts/<run>/findings.json` for the current tenant.
    ```bash
    slz-discover --out artifacts/<run>/findings.json
    ```
+   If `slz-discover` is not on PATH (typical after `/plugin install` without a
+   `pip install`), use the portable form instead:
+   ```bash
+   python -m slz_readiness.discover.cli --out artifacts/<run>/findings.json
+   ```
 4. **Do not** modify any resource. All internal commands use `list` / `show` / `graph query` only.
 5. Print a one-line summary: number of findings and the output path.
 

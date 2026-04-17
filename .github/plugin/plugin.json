@@ -36,8 +36,8 @@
     "./.github/prompts/slz-run.prompt.md"
   ],
   "hooks": {
-    "pre-tool-use": "hooks/pre-tool-use.sh",
-    "post-tool-use": "hooks/post-tool-use.sh"
+    "pre-tool-use": "hooks/pre_tool_use.py",
+    "post-tool-use": "hooks/post_tool_use.py"
   },
   "mcpServers": {
     "azure": {

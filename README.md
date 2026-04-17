@@ -28,6 +28,8 @@ copilot
 
 Copilot fetches the repo, reads `.github/plugin/plugin.json`, and registers the agent, skills, slash commands, hooks, and MCP servers. The five slash commands (`/slz-discover`, `/slz-evaluate`, `/slz-plan`, `/slz-scaffold`, `/slz-run`) appear in the `/` menu.
 
+**Requirements (all platforms):** Python 3.11+, `az` CLI (logged in), `git`. No `pip install` is needed for normal use — the skills invoke the engine via `python -m slz_readiness.<phase>.cli`. Works on Windows, macOS and Linux without WSL.
+
 > Replace `msucharda/slz-readiness` with your fork if you've forked this repo.
 
 **Optional — as a marketplace:**
@@ -37,13 +39,12 @@ Copilot fetches the repo, reads `.github/plugin/plugin.json`, and registers the 
 /plugin install slz-readiness@slz-readiness
 ```
 
-**Dev / from local clone:**
+**Dev / from local clone (contributors only):**
 
 ```bash
 git clone https://github.com/msucharda/slz-readiness.git
 cd slz-readiness
-pip install -e ".[dev]"           # installs slz-discover / slz-evaluate / slz-scaffold CLIs
-chmod +x hooks/*.sh               # Linux/macOS
+pip install -e ".[dev]"           # installs slz-* console scripts + test deps
 ```
 
 Then inside Copilot CLI, from the repo root:

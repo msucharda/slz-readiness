@@ -33,9 +33,13 @@ and `artifacts/<run>/scaffold.manifest.json`.
      "sovereignty-policies": { "deployConfidential": true }
    }
    ```
-3. Run:
+3. Run (console script, or portable `python -m` form):
    ```bash
    slz-scaffold --gaps artifacts/<run>/gaps.json \
+                --params artifacts/<run>/scaffold.params.json \
+                --out    artifacts/<run>
+   # portable equivalent:
+   python -m slz_readiness.scaffold.cli --gaps artifacts/<run>/gaps.json \
                 --params artifacts/<run>/scaffold.params.json \
                 --out    artifacts/<run>
    ```
