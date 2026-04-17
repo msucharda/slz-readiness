@@ -16,7 +16,7 @@ jobs:
       - name: Pack as standard plugin
         run: apm pack --format plugin --output plugin-pack
       - name: Upload plugin artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slz-readiness-plugin
           path: plugin-pack/
