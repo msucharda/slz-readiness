@@ -41,14 +41,25 @@ When producing `plan.md`:
 
 `/slz-run` pauses between every phase for user approval. Never auto-advance unless the user explicitly passes `--no-pause`.
 
+**Every pause, confirmation, and scope question MUST be implemented by
+calling the `ask_user` tool with a structured schema (boolean for
+yes/no, enum for choices). Plain-text yes/no questions in the assistant
+response are forbidden — they bypass the structured-confirmation UX
+and are easy to miss in a scrolling terminal.**
+
 ### 6a. Tenant + subscription scope is always confirmed
 
 Before running **Discover** on any new run, the agent MUST:
 
-1. Explicitly ask the user **which tenant** to target. Enumerate available tenants via `az account list` rather than assuming the currently-active one — users often have multiple tenant memberships.
-2. Explicitly ask **which subscription scope** to use: either a specific set of subscription ids, or all subscriptions in the tenant. The default is *all*, but the user must confirm it.
+1. Enumerate available tenants via `az account list`, then call `ask_user`
+   with an `enum` field whose options are the discovered tenant ids +
+   display names. Do NOT assume the currently-active tenant.
+2. Call `ask_user` a second time with a `string` enum containing
+   `"all subscriptions"` plus each available subscription id, to confirm
+   the subscription scope. The default is *all*, but the user must select
+   it explicitly via the form.
 3. Pass the chosen scope to `slz-discover` via `--tenant <id>` and either `--subscription <id>` (repeatable) or `--all-subscriptions`. The CLI refuses to run without both flags set; this is a guard-rail, not a suggestion.
-4. If the chosen tenant differs from the active `az account show` tenant, ask the user to run `az login --tenant <id>` themselves — the read-only-verb hook does not permit the agent to run `login`.
+4. If the chosen tenant differs from the active `az account show` tenant, call `ask_user` with a boolean `acknowledged` field asking the user to run `az login --tenant <id>` themselves — the read-only-verb hook does not permit the agent to run `login`.
 
 ## 7. Log every decision
 

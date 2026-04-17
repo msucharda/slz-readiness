@@ -42,6 +42,11 @@ scaffold Bicep remediations using Azure Verified Modules.
 Pause between each phase for the user's explicit approval unless they pass
 `--no-pause` to `/slz-run`.
 
+**Every pause — and every clarifying question, including tenant/subscription
+scope confirmation — MUST be implemented by calling the `ask_user` tool.
+Plain-text yes/no questions are forbidden.** Use a structured boolean or
+enum schema so the operator sees a form, not free prose.
+
 ## Hard rules
 
 See `instructions/INSTRUCTIONS.md`. TL;DR: read-only, vendored baseline is
