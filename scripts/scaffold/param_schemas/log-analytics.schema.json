@@ -3,10 +3,11 @@
   "title": "log-analytics.params",
   "type": "object",
   "additionalProperties": false,
-  "required": ["workspaceName"],
+  "required": ["workspaceName", "location"],
   "properties": {
     "workspaceName": { "type": "string", "minLength": 4, "maxLength": 63 },
     "location": { "type": "string" },
+    "resourceGroupName": { "type": "string", "minLength": 1, "maxLength": 90, "default": "rg-slz-management" },
     "retentionInDays": { "type": "integer", "minimum": 30, "maximum": 730, "default": 365 },
     "skuName": { "type": "string", "enum": ["PerGB2018", "CapacityReservation"], "default": "PerGB2018" }
   }
