@@ -1,7 +1,7 @@
 {
   "plugin": {
-    "version": "0.4.1",
-    "changelog": "v0.4.1 \u2014 fix: --all-subscriptions no longer fans out cross-tenant in discover"
+    "version": "0.5.0",
+    "changelog": "v0.5.0 \u2014 phase summaries: discover/evaluate/plan/scaffold .summary.{json,md} + run.summary.md roll-up; new slz-plan-summary CLI"
   },
   "_comment": "Baseline source: Azure-Landing-Zones-Library contains both ALZ and SLZ platform trees. Pinned to the latest main commit at implementation start (2026-04-16) and refreshed on a quarterly cadence. Every file in data/baseline/ must match its upstream SHA \u2014 verified by scripts/slz_readiness/evaluate/baseline_integrity.py.",
   "alz_library": {
