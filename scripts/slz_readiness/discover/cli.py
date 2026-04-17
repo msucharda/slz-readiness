@@ -139,9 +139,14 @@ def main(
         )
 
     if all_subscriptions:
-        sub_filter: set[str] | None = None  # None = no filter downstream
         scope_mode = "all"
         scope_sub_ids: list[str] = sorted(_list_tenant_subscriptions(tenant_id))
+        # Pin the filter to the tenant-scoped sub set so downstream discoverers
+        # that call `az account list --all` (which spans every tenant the user
+        # is a guest in) cannot silently fan out cross-tenant. Fall back to
+        # None only when the tenant genuinely has zero subs, so discoverers
+        # still emit tenant-level error findings instead of short-circuiting.
+        sub_filter: set[str] | None = set(scope_sub_ids) if scope_sub_ids else None
     else:
         sub_filter = {s for s in subscription_ids}
         scope_mode = "filtered"

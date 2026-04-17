@@ -180,8 +180,37 @@ def test_cli_passes_subscription_filter_to_discoverers(monkeypatch, tmp_path):
     assert seen["filter"] == {"sub-a"}
 
 
-def test_cli_all_subscriptions_passes_none_filter(monkeypatch, tmp_path):
-    """--all-subscriptions means no per-call filter (downstream queries everything)."""
+def test_cli_all_subscriptions_passes_tenant_filter(monkeypatch, tmp_path):
+    """--all-subscriptions must pin the filter to the tenant-scoped sub set,
+    so discoverers calling `az account list --all` (cross-tenant) do not
+    silently fan out beyond the confirmed tenant."""
+    seen: dict[str, object] = {}
+
+    class Recorder:
+        @staticmethod
+        def discover(progress_cb=None, subscription_filter=None):  # noqa: ARG004
+            seen["filter"] = subscription_filter
+            return []
+
+    Recorder.__name__ = "slz_readiness.discover.sovereignty_controls"
+    monkeypatch.setattr(cli, "DISCOVERERS", [Recorder])
+    monkeypatch.setattr(cli, "_resolve_active_tenant", lambda: "tenant-abc")
+    monkeypatch.setattr(
+        cli, "_list_tenant_subscriptions", lambda tid: ["sub-x", "sub-y", "sub-z"]
+    )
+    out = tmp_path / "findings.json"
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.main,
+        ["--out", str(out), "--tenant", "tenant-abc", "--all-subscriptions"],
+    )
+    assert result.exit_code == 0, result.output
+    assert seen["filter"] == {"sub-x", "sub-y", "sub-z"}
+
+
+def test_cli_all_subscriptions_empty_tenant_passes_none(monkeypatch, tmp_path):
+    """Pathological edge: tenant with zero subs keeps filter=None so
+    discoverers still emit tenant-level error findings."""
     seen: dict[str, object] = {}
 
     class Recorder:
@@ -223,6 +252,34 @@ def test_sovereignty_controls_honours_filter(monkeypatch):
     assert len(policy_calls) == 2
     for c in policy_calls:
         assert "sub-b" in c
+
+
+def test_sovereignty_controls_ignores_cross_tenant_subs(monkeypatch):
+    """Regression: `az account list --all` returns subs across every tenant
+    the user is a guest in. When the CLI supplies a tenant-scoped filter,
+    sovereignty_controls must NOT issue policy-state calls for foreign-tenant
+    subs — that was the source of the 10-vs-164 fan-out bug."""
+    calls: list[list[str]] = []
+
+    def fake_run_az(args):
+        calls.append(args)
+        if args[:2] == ["account", "list"]:
+            # Two tenants visible; only tenant-A is in scope.
+            return [
+                {"id": "sub-a1", "tenantId": "tenant-A"},
+                {"id": "sub-a2", "tenantId": "tenant-A"},
+                {"id": "sub-b1", "tenantId": "tenant-B"},
+                {"id": "sub-b2", "tenantId": "tenant-B"},
+            ]
+        return []
+
+    monkeypatch.setattr(sovereignty_controls, "run_az", fake_run_az)
+    sovereignty_controls.discover(subscription_filter={"sub-a1", "sub-a2"})
+    policy_calls = [c for c in calls if c and c[0] == "policy"]
+    # 2 in-scope subs × 2 assignments = 4; no calls for sub-b1 / sub-b2.
+    assert len(policy_calls) == 4
+    touched = {c[c.index("--subscription") + 1] for c in policy_calls}
+    assert touched == {"sub-a1", "sub-a2"}
 
 
 def test_subscription_inventory_honours_filter(monkeypatch):
