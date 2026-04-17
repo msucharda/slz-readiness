@@ -1,7 +1,7 @@
 {
   "plugin": {
-    "version": "0.5.2",
-    "changelog": "v0.5.2 \u2014 Fix 7 deployment-blocker issues from session aa4e7b2f: log-analytics subscription scope + RG, archetype-policies safe-access, placeholder-subscription detector with operator warning, per-bucket scaffold resilience, pre_tool_use transport-layer hardening (blocks Invoke-RestMethod/curl/az rest writes vs ARM/Graph), and how-to-deploy.md operator permissions + deploy-order sections."
+    "version": "0.5.3",
+    "changelog": "v0.5.3 \u2014 Fix BCP135 in management-groups.bicep; emit low-priv deploy runbook; log-analytics scope fix; CI decouple whatif"
   },
   "_comment": "Baseline source: Azure-Landing-Zones-Library contains both ALZ and SLZ platform trees. Pinned to the latest main commit at implementation start (2026-04-16) and refreshed on a quarterly cadence. Every file in data/baseline/ must match its upstream SHA \u2014 verified by scripts/slz_readiness/evaluate/baseline_integrity.py.",
   "alz_library": {
