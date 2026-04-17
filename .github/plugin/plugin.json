@@ -1,13 +1,27 @@
 {
   "name": "slz-readiness",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Audit an Azure tenant for Sovereign Landing Zone readiness against a vendored, SHA-pinned Cloud Adoption Framework baseline. Read-only discovery, deterministic evaluation, AVM-based Bicep scaffolding.",
-  "author": { "name": "msucharda" },
+  "author": {
+    "name": "msucharda"
+  },
   "license": "MIT",
   "repository": "https://github.com/msucharda/slz-readiness",
   "homepage": "https://github.com/msucharda/slz-readiness",
-  "keywords": ["azure", "landing-zone", "sovereign", "slz", "alz", "caf", "governance", "bicep", "avm"],
-  "agents": ["./.github/agents/"],
+  "keywords": [
+    "azure",
+    "landing-zone",
+    "sovereign",
+    "slz",
+    "alz",
+    "caf",
+    "governance",
+    "bicep",
+    "avm"
+  ],
+  "agents": [
+    "./.github/agents/"
+  ],
   "skills": [
     "./.github/skills/discover/",
     "./.github/skills/evaluate/",
@@ -28,12 +42,22 @@
   "mcpServers": {
     "azure": {
       "command": "npx",
-      "args": ["-y", "@azure/mcp@latest", "server", "start"]
+      "args": [
+        "-y",
+        "@azure/mcp@latest",
+        "server",
+        "start"
+      ]
     },
     "sequential-thinking": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-      "env": { "DISABLE_THOUGHT_LOGGING": "false" }
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "env": {
+        "DISABLE_THOUGHT_LOGGING": "false"
+      }
     }
   }
 }
