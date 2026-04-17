@@ -1,0 +1,26 @@
+rule_id: archetype.alz_sandbox_policies_applied
+design_area: archetype
+severity: medium
+description: >-
+  The `sandbox` management group must carry the ALZ `sandbox` archetype
+  policy. It prevents on-prem connectivity and resource-type combinations
+  incompatible with experimental workloads.
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/alz/archetype_definitions/sandbox.alz_archetype_definition.json
+  sha: 749741dbc54911b4b29b51fdb81bbb1f7bca29e6
+matcher:
+  type: archetype_policies_applied
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/sandbox
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/alz/archetype_definitions/sandbox.alz_archetype_definition.json
+    sha: 749741dbc54911b4b29b51fdb81bbb1f7bca29e6
+expected: null
+message: >-
+  The ALZ `sandbox` archetype policy is missing. Sandbox subscriptions may
+  connect to production networks.
+remediation_template: archetype-policies

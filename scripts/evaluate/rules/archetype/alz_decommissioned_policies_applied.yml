@@ -1,0 +1,26 @@
+rule_id: archetype.alz_decommissioned_policies_applied
+design_area: archetype
+severity: medium
+description: >-
+  The `decommissioned` management group must carry the ALZ `decommissioned`
+  archetype policy. It prevents new resources from being created in retired
+  subscriptions.
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/alz/archetype_definitions/decommissioned.alz_archetype_definition.json
+  sha: 4371b9ddab4687b57e99c231fdcc052109ce925d
+matcher:
+  type: archetype_policies_applied
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/decommissioned
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/alz/archetype_definitions/decommissioned.alz_archetype_definition.json
+    sha: 4371b9ddab4687b57e99c231fdcc052109ce925d
+expected: null
+message: >-
+  The ALZ `decommissioned` archetype policy is missing. Retired subscriptions
+  may still accept new resources.
+remediation_template: archetype-policies

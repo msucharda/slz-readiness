@@ -24,4 +24,4 @@ expected: null  # matcher reads required list from the archetype itself
 message: >-
   Sovereign-root policy assignments are missing at the SLZ management group.
   Assign them so that sovereignty deny/audit controls take effect tenant-wide.
-remediation_template: policy-assignment
+remediation_template: sovereignty-global-policies

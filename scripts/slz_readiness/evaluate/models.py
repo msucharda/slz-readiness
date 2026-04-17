@@ -27,11 +27,24 @@ class Finding:
 
 @dataclass
 class Gap:
-    """A single rule failure emitted by Evaluate."""
+    """A single rule failure emitted by Evaluate.
+
+    ``status`` (v0.2.0) distinguishes three real-world cases that v0.1.0 collapsed:
+
+    * ``missing``      — target resource / assignment / MG is not present.
+    * ``misconfigured`` — present but its configuration violates the rule
+                          (e.g. assignment exists but ``enforcementMode`` wrong).
+    * ``unknown``       — discovery was blocked (permission denied, network
+                          error, rate limit). The human operator must re-run
+                          with elevated access before the gap can be resolved.
+
+    ``severity`` stays on the rule's nominal rating. Plan phase uses ``status``
+    to render "Blocked discoveries" under its own heading.
+    """
 
     rule_id: str
-    severity: str  # "critical" | "high" | "medium" | "low" | "info"
-    design_area: str  # "mg" | "identity" | "policy" | "logging" | "sovereignty"
+    severity: str  # "critical" | "high" | "medium" | "low" | "info" | "unknown"
+    design_area: str  # "mg" | "identity" | "policy" | "logging" | "sovereignty" | "archetype"
     observed: Any
     expected: Any
     baseline_ref: BaselineRef
@@ -39,3 +52,4 @@ class Gap:
     message: str
     remediation_template: str | None = None  # maps to scripts/scaffold/avm_templates/<name>.bicep
     remediation_params: dict[str, Any] = field(default_factory=dict)
+    status: str = "missing"  # "missing" | "misconfigured" | "unknown"

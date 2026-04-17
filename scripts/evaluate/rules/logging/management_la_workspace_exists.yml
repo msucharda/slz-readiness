@@ -1,0 +1,21 @@
+rule_id: logging.management_la_workspace_exists
+design_area: logging
+severity: high
+description: >-
+  SLZ guidance requires a Log Analytics workspace for management-plane
+  logging. At least one workspace must exist in the tenant (typically in the
+  management platform subscription).
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/alz/architecture_definitions/alz.alz_architecture_definition.json
+  sha: 039ff6198f3af30f7ef5e9aefed7c630435272ee
+matcher:
+  type: any_subscription_has_workspace
+  selector:
+    resource_type: microsoft.operationalinsights/workspaces
+  aggregate: tenant
+expected: null
+message: >-
+  No Log Analytics workspace was found in any subscription. SLZ requires a
+  central management workspace for audit, sign-in, and activity logs.
+remediation_template: log-analytics

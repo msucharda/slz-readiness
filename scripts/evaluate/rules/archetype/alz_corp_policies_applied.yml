@@ -1,0 +1,26 @@
+rule_id: archetype.alz_corp_policies_applied
+design_area: archetype
+severity: high
+description: >-
+  The `corp` management group must carry every policy assignment declared in
+  the ALZ `corp` archetype. These policies enforce the private-only network
+  posture for corporate landing zones.
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/alz/archetype_definitions/corp.alz_archetype_definition.json
+  sha: 4624a39edefd00b502d33d719ea0710837d32f5d
+matcher:
+  type: archetype_policies_applied
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/corp
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/alz/archetype_definitions/corp.alz_archetype_definition.json
+    sha: 4624a39edefd00b502d33d719ea0710837d32f5d
+expected: null
+message: >-
+  The ALZ `corp` archetype policies are not all assigned at the `corp`
+  management group. Corporate landing zones may accept public endpoints.
+remediation_template: archetype-policies

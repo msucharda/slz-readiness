@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sovereignty-confidential-policies.params",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "enforcementMode": { "type": "string", "enum": ["Default", "DoNotEnforce"], "default": "Default" }
+  }
+}

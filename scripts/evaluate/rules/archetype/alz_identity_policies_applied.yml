@@ -1,0 +1,27 @@
+rule_id: archetype.alz_identity_policies_applied
+design_area: archetype
+severity: high
+description: >-
+  The `identity` management group must carry every policy assignment declared
+  in the ALZ `identity` archetype. These guardrails protect the identity
+  plane (AD DS, Entra Connect servers).
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/alz/archetype_definitions/identity.alz_archetype_definition.json
+  sha: cf8ede23e82366e4eeeb057fa8c2fc38e818d183
+matcher:
+  type: archetype_policies_applied
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/identity
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/alz/archetype_definitions/identity.alz_archetype_definition.json
+    sha: cf8ede23e82366e4eeeb057fa8c2fc38e818d183
+expected: null
+message: >-
+  The ALZ `identity` archetype policies are not all assigned at the
+  `identity` management group. Identity-plane subscriptions may be exposed to
+  internet-facing RDP or public IPs.
+remediation_template: archetype-policies

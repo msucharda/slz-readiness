@@ -7,16 +7,19 @@ from pathlib import Path
 
 import click
 
+from .. import _trace
 from . import (
     identity_rbac,
     logging_monitoring,
     mg_hierarchy,
     policy_assignments,
     sovereignty_controls,
+    subscription_inventory,
 )
 
 DISCOVERERS = [
     mg_hierarchy,
+    subscription_inventory,
     policy_assignments,
     identity_rbac,
     logging_monitoring,
@@ -29,8 +32,13 @@ DISCOVERERS = [
 def main(out_path: Path) -> None:
     """Collect read-only findings from the tenant into findings.json."""
     findings: list = []
-    for mod in DISCOVERERS:
-        findings.extend(mod.discover())
+    run_dir = out_path.parent
+    with _trace.tracer(run_dir, phase="discover"):
+        for mod in DISCOVERERS:
+            _trace.log("discoverer.begin", module=mod.__name__)
+            mod_findings = mod.discover()
+            _trace.log("discoverer.end", module=mod.__name__, finding_count=len(mod_findings))
+            findings.extend(mod_findings)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
         json.dumps({"findings": findings}, indent=2, sort_keys=True) + "\n",

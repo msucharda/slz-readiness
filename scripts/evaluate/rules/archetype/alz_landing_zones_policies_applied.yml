@@ -1,0 +1,28 @@
+rule_id: archetype.alz_landing_zones_policies_applied
+design_area: archetype
+severity: high
+description: >-
+  The `landingzones` management group must carry every policy assignment
+  declared in the ALZ `landing_zones` archetype (~53 assignments). This is
+  the largest archetype in the baseline and enforces workload-plane security
+  defaults inherited by `corp`, `online`, and `confidential_*`.
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/alz/archetype_definitions/landing_zones.alz_archetype_definition.json
+  sha: 306fbad10243bf92789d9f88f9e89529882f62aa
+matcher:
+  type: archetype_policies_applied
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/landingzones
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/alz/archetype_definitions/landing_zones.alz_archetype_definition.json
+    sha: 306fbad10243bf92789d9f88f9e89529882f62aa
+expected: null
+message: >-
+  The ALZ `landing_zones` archetype policies (~53 assignments) are not all
+  applied at the `landingzones` management group. Workload landing zones
+  inherit an incomplete security baseline.
+remediation_template: archetype-policies

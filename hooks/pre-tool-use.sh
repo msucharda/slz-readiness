@@ -35,7 +35,10 @@ if ! [[ "$cmd" =~ (^|[[:space:]])(az|azd|bicep)([[:space:]]|$) ]]; then
 fi
 
 # Read-only verb allowlist. Sub-verbs like `az policy assignment list` match too.
-allow_re='(^|[[:space:]])(list|show|get|query|search|list-.*|show-.*|export|validate|what-if|check|whoami|account|version)([[:space:]]|$)'
+# Additions (v0.2.0): summarize, preview, download, effective-permissions, graph.
+# See the research report §A-hook-allowlist for rationale — deny-by-default was
+# blocking legitimate diagnostic verbs (`az policy state summarize`, etc.).
+allow_re='(^|[[:space:]])(list|show|get|query|search|list-.*|show-.*|export|validate|what-if|check|whoami|account|version|summarize|preview|download|effective-permissions|graph)([[:space:]]|$)'
 deny_re='(^|[[:space:]])(create|delete|set|update|apply|deploy|start|stop|restart|add|remove|import|upload|grant|revoke|reset|purge|assign|invoke|new|put|patch)([[:space:]]|$)'
 
 if [[ "$cmd" =~ $deny_re ]]; then
@@ -50,5 +53,5 @@ fi
 
 # Unknown verb — deny by default.
 echo "pre-tool-use: BLOCKED unrecognised Azure verb in: $cmd" >&2
-echo "Allowed verbs: list, show, get, query, search, export, validate, what-if, check, account, version." >&2
+echo "Allowed verbs: list, show, get, query, search, export, validate, what-if, check, account, version, summarize, preview, download, effective-permissions, graph." >&2
 exit 1

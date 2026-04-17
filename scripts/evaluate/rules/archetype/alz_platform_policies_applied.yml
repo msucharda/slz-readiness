@@ -1,0 +1,27 @@
+rule_id: archetype.alz_platform_policies_applied
+design_area: archetype
+severity: high
+description: >-
+  The `platform` management group must carry every policy assignment declared
+  in the ALZ `platform` archetype (~40 assignments). These enforce the
+  platform-plane security baseline across `connectivity`, `identity`, and
+  `management`.
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/alz/archetype_definitions/platform.alz_archetype_definition.json
+  sha: 1dc88512aee160a30d43f20eea7432ac65a63ae6
+matcher:
+  type: archetype_policies_applied
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/platform
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/alz/archetype_definitions/platform.alz_archetype_definition.json
+    sha: 1dc88512aee160a30d43f20eea7432ac65a63ae6
+expected: null
+message: >-
+  The ALZ `platform` archetype policies (~40 assignments) are not all applied
+  at the `platform` management group.
+remediation_template: archetype-policies

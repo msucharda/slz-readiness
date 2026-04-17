@@ -1,27 +1,58 @@
-"""Discover Log Analytics workspaces across the tenant (v1 MVP)."""
+"""Discover Log Analytics workspaces across the tenant.
+
+Emits one finding per subscription observed: even subscriptions with zero
+workspaces get a finding with empty ``observed_state.workspaces``, so the
+``logging.management_la_workspace_exists`` rule can select by subscription.
+"""
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
-from .az_common import az_cmd_str, run_az
+from .az_common import AzError, az_cmd_str, error_finding, run_az
 
 
 def discover() -> list[dict[str, Any]]:
     args = [
         "graph", "query", "--graph-query",
-        "resources | where type =~ 'microsoft.operationalinsights/workspaces' | project name, id, resourceGroup, location",
+        "resources | where type =~ 'microsoft.operationalinsights/workspaces' "
+        "| project name, id, resourceGroup, location, subscriptionId",
     ]
     try:
-        rows = run_az(args).get("data", [])
-    except Exception:  # noqa: BLE001
-        rows = []
-    return [
+        result = run_az(args)
+    except AzError as err:
+        return [
+            error_finding(
+                "microsoft.operationalinsights/workspaces",
+                "tenant",
+                "tenant",
+                args,
+                err,
+            )
+        ]
+    rows = result.get("data", []) if isinstance(result, dict) else []
+    by_sub: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        by_sub[row.get("subscriptionId") or "unknown"].append(row)
+    findings: list[dict[str, Any]] = [
         {
             "resource_type": "microsoft.operationalinsights/workspaces",
-            "resource_id": row.get("id", ""),
-            "scope": row.get("resourceGroup", ""),
-            "observed_state": row,
+            "resource_id": f"subscription/{sub_id}",
+            "scope": f"subscription/{sub_id}",
+            "observed_state": {"workspaces": workspaces},
             "query_cmd": az_cmd_str(args),
         }
-        for row in rows
+        for sub_id, workspaces in sorted(by_sub.items())
     ]
+    if not findings:
+        # Still emit one tenant-level finding so the rule sees the query ran.
+        findings.append(
+            {
+                "resource_type": "microsoft.operationalinsights/workspaces",
+                "resource_id": "tenant",
+                "scope": "tenant",
+                "observed_state": {"workspaces": []},
+                "query_cmd": az_cmd_str(args),
+            }
+        )
+    return findings

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sovereignty-global-policies.params",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["listOfAllowedLocations"],
+  "properties": {
+    "enforcementMode": { "type": "string", "enum": ["Default", "DoNotEnforce"], "default": "Default" },
+    "listOfAllowedLocations": { "type": "array", "items": { "type": "string" } }
+  }
+}

@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from .az_common import az_cmd_str, run_az
+from .az_common import AzError, az_cmd_str, error_finding, run_az
 
-# Scopes we sweep for policy assignments. Kept narrow to v1 design areas.
+# Scopes we sweep for policy assignments. Covers every archetype-bearing MG
+# in the SLZ hierarchy so the archetype_policies_applied rules have data.
 SCOPES = [
     "slz",
     "platform",
@@ -14,8 +15,13 @@ SCOPES = [
     "online",
     "confidential_corp",
     "confidential_online",
+    "public",
     "identity",
     "management",
+    "connectivity",
+    "security",
+    "sandbox",
+    "decommissioned",
 ]
 
 
@@ -26,8 +32,22 @@ def discover() -> list[dict[str, Any]]:
         args = ["policy", "assignment", "list", "--scope", scope_arg]
         try:
             assignments = run_az(args)
-        except Exception:  # noqa: BLE001
-            continue  # MG doesn't exist — hierarchy rule will catch that
+        except AzError as err:
+            if err.kind == "not_found":
+                # MG genuinely absent — mg.slz.hierarchy_shape rule covers this.
+                # No need to emit noise per archetype rule.
+                continue
+            # permission_denied / rate_limited / network — surface as unknown.
+            findings.append(
+                error_finding(
+                    "microsoft.authorization/policyassignments",
+                    f"scope:mg/{mg}",
+                    f"mg/{mg}",
+                    args,
+                    err,
+                )
+            )
+            continue
         findings.append(
             {
                 "resource_type": "microsoft.authorization/policyassignments",

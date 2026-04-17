@@ -76,11 +76,31 @@ def archetype_policies_applied(
     return not missing, {"required": required, "missing": missing}
 
 
+def any_subscription_has_workspace(
+    observed: Any, expected: Any, spec: dict[str, Any]
+) -> tuple[bool, Any]:
+    """Passes when at least one subscription in the tenant has a Log Analytics
+    workspace. ``observed`` is either a single per-subscription observation
+    dict (``{"workspaces": [...]}``) or, with aggregate=tenant, a list of
+    such dicts — one per subscription.
+    """
+    items = observed if isinstance(observed, list) else [observed or {}]
+    workspaces: list[Any] = []
+    for item in items:
+        workspaces.extend((item or {}).get("workspaces", []) or [])
+    return len(workspaces) >= 1, {
+        "workspace_count": len(workspaces),
+        # Keep the snapshot small so gaps.json stays readable.
+        "workspaces_sample": workspaces[:5],
+    }
+
+
 MATCHERS: dict[str, Matcher] = {
     "equals": equals,
     "contains_all": contains_all,
     "policy_assignments_include": policy_assignments_include,
     "archetype_policies_applied": archetype_policies_applied,
+    "any_subscription_has_workspace": any_subscription_has_workspace,
 }
 
 

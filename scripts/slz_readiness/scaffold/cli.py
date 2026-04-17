@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 
+from .. import _trace
 from .engine import ScaffoldError, scaffold_for_gaps
 
 
@@ -24,16 +25,22 @@ def main(gaps_path: Path, params_path: Path, out_dir: Path) -> None:
     gaps_doc = json.loads(gaps_path.read_text(encoding="utf-8"))
     gaps = gaps_doc.get("gaps", gaps_doc) if isinstance(gaps_doc, dict) else gaps_doc
     params_by_template = json.loads(params_path.read_text(encoding="utf-8"))
-    try:
-        emitted = scaffold_for_gaps(gaps, params_by_template, out_dir)
-    except ScaffoldError as exc:
-        click.echo(f"SCAFFOLD ERROR: {exc}", err=True)
-        sys.exit(2)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with _trace.tracer(out_dir, phase="scaffold"):
+        _trace.log("scaffold.begin", gap_count=len(gaps))
+        try:
+            emitted, warnings = scaffold_for_gaps(gaps, params_by_template, out_dir)
+        except ScaffoldError as exc:
+            click.echo(f"SCAFFOLD ERROR: {exc}", err=True)
+            sys.exit(2)
+        _trace.log("scaffold.end", emitted_count=len(emitted), warning_count=len(warnings))
     (out_dir / "scaffold.manifest.json").write_text(
-        json.dumps({"emitted": emitted}, indent=2, sort_keys=True) + "\n",
+        json.dumps({"emitted": emitted, "warnings": warnings}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     click.echo(f"Emitted {len(emitted)} templates -> {out_dir}")
+    if warnings:
+        click.echo(f"  with {len(warnings)} warnings (see scaffold.manifest.json)")
 
 
 if __name__ == "__main__":

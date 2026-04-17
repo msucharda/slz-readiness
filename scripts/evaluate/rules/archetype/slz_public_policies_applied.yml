@@ -1,0 +1,26 @@
+rule_id: archetype.slz_public_policies_applied
+design_area: archetype
+severity: high
+description: >-
+  The `public` management group must carry every policy assignment declared
+  in the SLZ `public` archetype. `public` is the SLZ counterpart to ALZ's
+  `online` — landing zones that may accept internet-facing endpoints.
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/slz/archetype_definitions/public.alz_archetype_definition.json
+  sha: d755a8d8a9af79e835729cca13c685c8ee891265
+matcher:
+  type: archetype_policies_applied
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/public
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/slz/archetype_definitions/public.alz_archetype_definition.json
+    sha: d755a8d8a9af79e835729cca13c685c8ee891265
+expected: null
+message: >-
+  The SLZ `public` archetype policies are missing at the `public` management
+  group. Public landing zones lack their sovereignty guardrails.
+remediation_template: archetype-policies

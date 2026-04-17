@@ -1,0 +1,26 @@
+rule_id: archetype.alz_connectivity_policies_applied
+design_area: archetype
+severity: high
+description: >-
+  The `connectivity` management group must carry every policy assignment
+  declared in the ALZ `connectivity` archetype. These policies enforce
+  hub-spoke topology assumptions for landing zones.
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/alz/archetype_definitions/connectivity.alz_archetype_definition.json
+  sha: f65008fb9f2e200b5ecbf2eaa3f8a667c5e802a5
+matcher:
+  type: archetype_policies_applied
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/connectivity
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/alz/archetype_definitions/connectivity.alz_archetype_definition.json
+    sha: f65008fb9f2e200b5ecbf2eaa3f8a667c5e802a5
+expected: null
+message: >-
+  The ALZ `connectivity` archetype policies are not all assigned at the
+  `connectivity` management group.
+remediation_template: archetype-policies

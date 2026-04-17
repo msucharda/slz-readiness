@@ -22,4 +22,4 @@ matcher:
 expected: null
 message: >-
   Confidential-Online archetype policies are missing.
-remediation_template: sovereignty-policies
+remediation_template: sovereignty-confidential-policies

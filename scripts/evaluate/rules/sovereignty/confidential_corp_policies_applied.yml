@@ -25,4 +25,4 @@ expected: null
 message: >-
   Confidential-Corp archetype policies are missing. Without them, Confidential
   Computing and CMK requirements are not enforced for confidential workloads.
-remediation_template: sovereignty-policies
+remediation_template: sovereignty-confidential-policies

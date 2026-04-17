@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "archetype-policies.params",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assignments"],
+  "properties": {
+    "assignments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "displayName", "policyDefinitionId"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 24 },
+          "displayName": { "type": "string" },
+          "policyDefinitionId": { "type": "string" },
+          "enforcementMode": { "type": "string", "enum": ["Default", "DoNotEnforce"] },
+          "parameters": { "type": "object" }
+        }
+      }
+    },
+    "defaultEnforcementMode": { "type": "string", "enum": ["Default", "DoNotEnforce"], "default": "Default" }
+  }
+}
