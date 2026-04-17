@@ -1,0 +1,27 @@
+rule_id: policy.slz.sovereign_root_policies_applied
+design_area: policy
+severity: critical
+description: >-
+  The root of the SLZ hierarchy must carry every policy assignment declared in
+  the sovereign_root archetype (currently: Enforce-Sovereign-Global). This is
+  the top-level sovereignty guardrail; without it, regional-containment and
+  tenant-wide deny policies are not enforced.
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/slz/archetype_definitions/sovereign_root.alz_archetype_definition.json
+  sha: 92d0d783c9a42c96213ee4f6c64242a99859fd25
+matcher:
+  type: archetype_policies_applied
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/slz
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/slz/archetype_definitions/sovereign_root.alz_archetype_definition.json
+    sha: 92d0d783c9a42c96213ee4f6c64242a99859fd25
+expected: null  # matcher reads required list from the archetype itself
+message: >-
+  Sovereign-root policy assignments are missing at the SLZ management group.
+  Assign them so that sovereignty deny/audit controls take effect tenant-wide.
+remediation_template: policy-assignment

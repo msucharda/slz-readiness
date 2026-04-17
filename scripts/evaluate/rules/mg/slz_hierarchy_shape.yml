@@ -1,0 +1,37 @@
+rule_id: mg.slz.hierarchy_shape
+design_area: mg
+severity: high
+description: >-
+  The tenant's management-group hierarchy must include the management groups
+  required by the SLZ reference architecture (slz → platform → {management,
+  connectivity, identity, security}, slz → landingzones → {corp, online,
+  confidential_corp, confidential_online}, slz → sandbox, slz → decommissioned).
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/slz/architecture_definitions/slz.alz_architecture_definition.json
+  sha: 8b8bdd79eac7617589296e17a159eaeaf9d47291
+matcher:
+  type: contains_all
+  selector:
+    resource_type: microsoft.management/managementgroups.summary
+  aggregate: tenant
+  path: present_ids
+expected:
+  - slz
+  - platform
+  - landingzones
+  - public
+  - corp
+  - online
+  - confidential_corp
+  - confidential_online
+  - sandbox
+  - security
+  - management
+  - connectivity
+  - identity
+  - decommissioned
+message: >-
+  Required SLZ management groups are missing. Create the full hierarchy before
+  assigning archetype policies.
+remediation_template: management-groups

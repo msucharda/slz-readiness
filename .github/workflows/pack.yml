@@ -1,0 +1,22 @@
+name: pack
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pack-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install APM
+        run: curl -sSL https://aka.ms/apm-unix | sh
+      - name: Pack as standard plugin
+        run: apm pack --format plugin --output plugin-pack
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: slz-readiness-plugin
+          path: plugin-pack/

@@ -1,0 +1,9 @@
+{
+  "name": "public",
+  "policy_assignments": [
+    "Deny-L3-IP-Routing"
+  ],
+  "policy_definitions": [],
+  "policy_set_definitions": [],
+  "role_definitions": []
+}

@@ -1,0 +1,51 @@
+name: slz-readiness
+version: 0.1.0
+description: >-
+  Audit an Azure tenant for Sovereign Landing Zone (SLZ) readiness against a
+  vendored, SHA-pinned Cloud Adoption Framework baseline. Read-only discovery,
+  deterministic evaluation, AVM-based Bicep remediation scaffolding.
+author: msucharda
+license: MIT
+homepage: https://github.com/msucharda/slz-readiness
+repository: https://github.com/msucharda/slz-readiness
+keywords:
+  - azure
+  - landing-zone
+  - sovereign
+  - slz
+  - alz
+  - caf
+  - governance
+  - bicep
+  - avm
+
+# Hybrid APM mode — authored here, packed into plugin.json via `apm pack --format plugin`.
+plugin:
+  id: slz-readiness
+  export: true
+
+dependencies:
+  apm: []
+
+mcp:
+  servers:
+    azure:
+      # Azure.Mcp.Server — uses the user's existing `az login` context.
+      command: npx
+      args:
+        - "-y"
+        - "@azure/mcp@latest"
+        - server
+        - start
+    sequential-thinking:
+      # Structured-reasoning scaffold, gated to plan + scaffold skills only.
+      command: npx
+      args:
+        - "-y"
+        - "@modelcontextprotocol/server-sequential-thinking"
+      env:
+        DISABLE_THOUGHT_LOGGING: "false"
+
+hooks:
+  pre-tool-use: hooks/pre-tool-use.sh
+  post-tool-use: hooks/post-tool-use.sh

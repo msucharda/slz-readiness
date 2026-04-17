@@ -1,0 +1,1226 @@
+{
+  "commit_sha": "559a4c86fd57eddd9ee5047fb01a455866bd1cf8",
+  "files": {
+    "platform/alz/README.md": {
+      "git_sha": "ea82fd651af8c996d6a7b588581d542844ec1cee",
+      "size": 25322
+    },
+    "platform/alz/alz_library_metadata.json": {
+      "git_sha": "8178d60c534538b36939a1a58eed618affaebbb8",
+      "size": 352
+    },
+    "platform/alz/alz_policy_default_values.json": {
+      "git_sha": "6c2a6f27b86ec03da9335e48342da26e4ecbb889",
+      "size": 7986
+    },
+    "platform/alz/archetype_definitions/connectivity.alz_archetype_definition.json": {
+      "git_sha": "f65008fb9f2e200b5ecbf2eaa3f8a667c5e802a5",
+      "size": 292
+    },
+    "platform/alz/archetype_definitions/corp.alz_archetype_definition.json": {
+      "git_sha": "4624a39edefd00b502d33d719ea0710837d32f5d",
+      "size": 403
+    },
+    "platform/alz/archetype_definitions/decommissioned.alz_archetype_definition.json": {
+      "git_sha": "4371b9ddab4687b57e99c231fdcc052109ce925d",
+      "size": 296
+    },
+    "platform/alz/archetype_definitions/identity.alz_archetype_definition.json": {
+      "git_sha": "cf8ede23e82366e4eeeb057fa8c2fc38e818d183",
+      "size": 372
+    },
+    "platform/alz/archetype_definitions/landing_zones.alz_archetype_definition.json": {
+      "git_sha": "306fbad10243bf92789d9f88f9e89529882f62aa",
+      "size": 1741
+    },
+    "platform/alz/archetype_definitions/management.alz_archetype_definition.json": {
+      "git_sha": "5c0835fb67c73df1355c152e5c13ae5b4f418172",
+      "size": 264
+    },
+    "platform/alz/archetype_definitions/online.alz_archetype_definition.json": {
+      "git_sha": "9590bd86e4534d3ba573bbb696a12fb52117e2ef",
+      "size": 260
+    },
+    "platform/alz/archetype_definitions/platform.alz_archetype_definition.json": {
+      "git_sha": "1dc88512aee160a30d43f20eea7432ac65a63ae6",
+      "size": 1401
+    },
+    "platform/alz/archetype_definitions/root.alz_archetype_definition.json": {
+      "git_sha": "bd402bb010efee6f7de7385f3ee36b699d96842c",
+      "size": 7791
+    },
+    "platform/alz/archetype_definitions/sandbox.alz_archetype_definition.json": {
+      "git_sha": "749741dbc54911b4b29b51fdb81bbb1f7bca29e6",
+      "size": 290
+    },
+    "platform/alz/archetype_definitions/security.alz_archetype_definition.json": {
+      "git_sha": "fcce3341978b7cd644d1a4a2996d556181aa7fcb",
+      "size": 262
+    },
+    "platform/alz/architecture_definitions/alz.alz_architecture_definition.json": {
+      "git_sha": "039ff6198f3af30f7ef5e9aefed7c630435272ee",
+      "size": 2102
+    },
+    "platform/alz/policy_assignments/Audit-AppGW-WAF.alz_policy_assignment.json": {
+      "git_sha": "12dc9ac885741802c72348a00de51418f6219099",
+      "size": 894
+    },
+    "platform/alz/policy_assignments/Audit-PeDnsZones.alz_policy_assignment.json": {
+      "git_sha": "50428e6b26aa4477537a9680f0c346a74de24fd7",
+      "size": 4007
+    },
+    "platform/alz/policy_assignments/Audit-ResourceRGLocation.alz_policy_assignment.json": {
+      "git_sha": "95af1a0b6b9ef1a34b62bc65adb07297bd87d026",
+      "size": 803
+    },
+    "platform/alz/policy_assignments/Audit-TrustedLaunch.alz_policy_assignment.json": {
+      "git_sha": "957601423a7e84aced7299c1c4799504d9cf4b6c",
+      "size": 1028
+    },
+    "platform/alz/policy_assignments/Audit-UnusedResources.alz_policy_assignment.json": {
+      "git_sha": "21d8bfb24d2ac3325b9f6d7d6483b41b81ad98cf",
+      "size": 1186
+    },
+    "platform/alz/policy_assignments/Audit-ZoneResiliency.alz_policy_assignment.json": {
+      "git_sha": "678f44c75739765e9482d9a8c8800ddf8a1f4e8b",
+      "size": 849
+    },
+    "platform/alz/policy_assignments/Deny-Classic-Resources.alz_policy_assignment.json": {
+      "git_sha": "f5cb162017ba593d6944ed74e36fbb2b885cc8a3",
+      "size": 4411
+    },
+    "platform/alz/policy_assignments/Deny-HybridNetworking.alz_policy_assignment.json": {
+      "git_sha": "4afa0e70e82e6fbd44b64cd2f87cb49d8911f452",
+      "size": 1390
+    },
+    "platform/alz/policy_assignments/Deny-IP-forwarding.alz_policy_assignment.json": {
+      "git_sha": "c2e592ce1c9e35150bc65fbbf714fef708a897f2",
+      "size": 952
+    },
+    "platform/alz/policy_assignments/Deny-MgmtPorts-Internet.alz_policy_assignment.json": {
+      "git_sha": "129b9385890baf8d453d13d7b32017dc554590ef",
+      "size": 863
+    },
+    "platform/alz/policy_assignments/Deny-Priv-Esc-AKS.alz_policy_assignment.json": {
+      "git_sha": "5d4a6f954ae237c6f1b50745f6d481ecf7d0593f",
+      "size": 1047
+    },
+    "platform/alz/policy_assignments/Deny-Privileged-AKS.alz_policy_assignment.json": {
+      "git_sha": "7fb067a285f86bfd892fc4f2a7e57b36f40dc414",
+      "size": 1018
+    },
+    "platform/alz/policy_assignments/Deny-Public-Endpoints.alz_policy_assignment.json": {
+      "git_sha": "13265db9e8d249bdea5296654a21de4608a2a160",
+      "size": 896
+    },
+    "platform/alz/policy_assignments/Deny-Public-IP-On-NIC.alz_policy_assignment.json": {
+      "git_sha": "398d9048e3fff4b3de2453b8f12536e3b2bc933e",
+      "size": 844
+    },
+    "platform/alz/policy_assignments/Deny-Public-IP.alz_policy_assignment.json": {
+      "git_sha": "8c55f298de50bd246440d257bfbc8b3d0328cbc9",
+      "size": 951
+    },
+    "platform/alz/policy_assignments/Deny-Storage-http.alz_policy_assignment.json": {
+      "git_sha": "e2812bfe1eb0ccc943275c0cd0538ec41e689c9e",
+      "size": 1158
+    },
+    "platform/alz/policy_assignments/Deny-Subnet-Without-Nsg.alz_policy_assignment.json": {
+      "git_sha": "3b0e539b5167c302f7e21c8199e5527677850ef1",
+      "size": 844
+    },
+    "platform/alz/policy_assignments/Deny-UnmanagedDisk.alz_policy_assignment.json": {
+      "git_sha": "71f2010a83e2b88c08136f89ae29813cc05414de",
+      "size": 1002
+    },
+    "platform/alz/policy_assignments/DenyAction-DeleteUAMIAMA.alz_policy_assignment.json": {
+      "git_sha": "83321cb0c717a44c17e6e0b6179e3fe1437c7a41",
+      "size": 1021
+    },
+    "platform/alz/policy_assignments/Deploy-ASC-Monitoring.alz_policy_assignment.json": {
+      "git_sha": "fe85358a677e2891b4dab53d1bc35199dceeb1ab",
+      "size": 831
+    },
+    "platform/alz/policy_assignments/Deploy-AzActivity-Log.alz_policy_assignment.json": {
+      "git_sha": "0cc59e07fd7fdd211303d851720f735e8da01af4",
+      "size": 1263
+    },
+    "platform/alz/policy_assignments/Deploy-AzSqlDb-Auditing.alz_policy_assignment.json": {
+      "git_sha": "fbc3633a24f8348ee19ca78e75fbbd3ddd507caa",
+      "size": 1281
+    },
+    "platform/alz/policy_assignments/Deploy-Diag-LogsCat.alz_policy_assignment.json": {
+      "git_sha": "4ab851c6da1c2cb9bac61a360b2c6435d74bd2ff",
+      "size": 1359
+    },
+    "platform/alz/policy_assignments/Deploy-GuestAttest.alz_policy_assignment.json": {
+      "git_sha": "f3baf92c7312344bc6e6f6eaf6269d9a3304e65d",
+      "size": 1304
+    },
+    "platform/alz/policy_assignments/Deploy-MCSB2-Monitoring.alz_policy_assignment.json": {
+      "git_sha": "525777ea0ffbef5377fd80adc7980889b4c9ba18",
+      "size": 849
+    },
+    "platform/alz/policy_assignments/Deploy-MDEndpoints.alz_policy_assignment.json": {
+      "git_sha": "4af57e178932e9b47c0efaf0e85d1731296b6119",
+      "size": 1348
+    },
+    "platform/alz/policy_assignments/Deploy-MDEndpointsAMA.alz_policy_assignment.json": {
+      "git_sha": "333357cee2279c171e16cca80860790885ee286d",
+      "size": 1147
+    },
+    "platform/alz/policy_assignments/Deploy-MDFC-Config-H224.alz_policy_assignment.json": {
+      "git_sha": "eeb23b34ca370a83125afbefbe49e1534c810804",
+      "size": 2191
+    },
+    "platform/alz/policy_assignments/Deploy-MDFC-DefSQL-AMA.alz_policy_assignment.json": {
+      "git_sha": "419865b2cab40d100f53f59a60dd38aac6b20d6a",
+      "size": 1873
+    },
+    "platform/alz/policy_assignments/Deploy-MDFC-OssDb.alz_policy_assignment.json": {
+      "git_sha": "877230a8155dd022c0fed9baf7ed49a3f762293f",
+      "size": 1105
+    },
+    "platform/alz/policy_assignments/Deploy-MDFC-SqlAtp.alz_policy_assignment.json": {
+      "git_sha": "41a8ce04f57e1daa9079c7ea401185e9f2093b36",
+      "size": 1026
+    },
+    "platform/alz/policy_assignments/Deploy-Private-DNS-Zones.alz_policy_assignment.json": {
+      "git_sha": "7ade32de740fdeac71e4fe35cbff4a5cecf5ae57",
+      "size": 19431
+    },
+    "platform/alz/policy_assignments/Deploy-SQL-TDE.alz_policy_assignment.json": {
+      "git_sha": "b00fa3d2baf8f196920fd40bccfc84c98a66fdca",
+      "size": 826
+    },
+    "platform/alz/policy_assignments/Deploy-SQL-Threat.alz_policy_assignment.json": {
+      "git_sha": "94bb5575dd6fe9fae93b5af168ceb280a299611a",
+      "size": 844
+    },
+    "platform/alz/policy_assignments/Deploy-SvcHealth-BuiltIn.alz_policy_assignment.json": {
+      "git_sha": "d629d388467fdd76d6b5154df30cc899b9d9612a",
+      "size": 1783
+    },
+    "platform/alz/policy_assignments/Deploy-VM-Backup.alz_policy_assignment.json": {
+      "git_sha": "004620eacc757ea48a48eaea5f2746484d79523c",
+      "size": 1388
+    },
+    "platform/alz/policy_assignments/Deploy-VM-ChangeTrack.alz_policy_assignment.json": {
+      "git_sha": "5278f18b72088f78d0d12ef7447fd395436bf1ef",
+      "size": 1679
+    },
+    "platform/alz/policy_assignments/Deploy-VM-Monitoring.alz_policy_assignment.json": {
+      "git_sha": "6f6cdc6d039a0de2f802fe0fdf9c3c609cb9cc9c",
+      "size": 1680
+    },
+    "platform/alz/policy_assignments/Deploy-VMSS-ChangeTrack.alz_policy_assignment.json": {
+      "git_sha": "85cfe00efdac85519b9640963520c487670a5fd4",
+      "size": 1713
+    },
+    "platform/alz/policy_assignments/Deploy-VMSS-Monitoring.alz_policy_assignment.json": {
+      "git_sha": "6bc1d047f0a767d9478616a96f3fe95e2f626e9e",
+      "size": 1910
+    },
+    "platform/alz/policy_assignments/Deploy-vmArc-ChangeTrack.alz_policy_assignment.json": {
+      "git_sha": "ae59a61dd15f1b9c36149d3981a7394ab9f1bed5",
+      "size": 1267
+    },
+    "platform/alz/policy_assignments/Deploy-vmHybr-Monitoring.alz_policy_assignment.json": {
+      "git_sha": "f7fc2846ce9d96c6a01636516f01314766541957",
+      "size": 1198
+    },
+    "platform/alz/policy_assignments/Enable-AUM-CheckUpdates.alz_policy_assignment.json": {
+      "git_sha": "787c1bbdd3b86ef72df3eb520b81f47f46d370f0",
+      "size": 1427
+    },
+    "platform/alz/policy_assignments/Enable-DDoS-VNET.alz_policy_assignment.json": {
+      "git_sha": "aee1d7f47689fae68ddaaa6a6ac83e82765467ec",
+      "size": 1080
+    },
+    "platform/alz/policy_assignments/Enforce-ACSB.alz_policy_assignment.json": {
+      "git_sha": "792a103067a3742911f67700ca3dedc71a3f24a3",
+      "size": 943
+    },
+    "platform/alz/policy_assignments/Enforce-AKS-HTTPS.alz_policy_assignment.json": {
+      "git_sha": "1e634d2cd369510b406035db130fcdc8a4d49886",
+      "size": 948
+    },
+    "platform/alz/policy_assignments/Enforce-ALZ-Decomm.alz_policy_assignment.json": {
+      "git_sha": "0ac56920ae5c6996329a840b4fda34ffd4bec42b",
+      "size": 1610
+    },
+    "platform/alz/policy_assignments/Enforce-ALZ-Sandbox.alz_policy_assignment.json": {
+      "git_sha": "29b36f28359991dbb59aef3e9463bccf21c7fa94",
+      "size": 1392
+    },
+    "platform/alz/policy_assignments/Enforce-ASR.alz_policy_assignment.json": {
+      "git_sha": "606664e961a58c465c60f646023ef5b93fcf1fd8",
+      "size": 858
+    },
+    "platform/alz/policy_assignments/Enforce-Encrypt-CMK0.alz_policy_assignment.json": {
+      "git_sha": "fd99830677e7aa9121cc6f8e56a7d73e57dc67c8",
+      "size": 930
+    },
+    "platform/alz/policy_assignments/Enforce-GR-APIM0.alz_policy_assignment.json": {
+      "git_sha": "081f6b25b3fd5bc6165e3af7204e1daa00248bcc",
+      "size": 897
+    },
+    "platform/alz/policy_assignments/Enforce-GR-AppServices0.alz_policy_assignment.json": {
+      "git_sha": "0b6663a28f9eed0947d376f3c775e41efaa1c900",
+      "size": 905
+    },
+    "platform/alz/policy_assignments/Enforce-GR-Automation0.alz_policy_assignment.json": {
+      "git_sha": "5625bc39c0e526fe84b5b06a8d1b1f27f137edb5",
+      "size": 924
+    },
+    "platform/alz/policy_assignments/Enforce-GR-BotService0.alz_policy_assignment.json": {
+      "git_sha": "5bcee241e38605adec2754b4ce45c149d8179a95",
+      "size": 900
+    },
+    "platform/alz/policy_assignments/Enforce-GR-CogServ0.alz_policy_assignment.json": {
+      "git_sha": "13588a846bedccc8729ed98416a092700b6ab370",
+      "size": 925
+    },
+    "platform/alz/policy_assignments/Enforce-GR-Compute0.alz_policy_assignment.json": {
+      "git_sha": "661b60f1f1cc13405b22dbdfb2f667b6b0b15d71",
+      "size": 882
+    },
+    "platform/alz/policy_assignments/Enforce-GR-ContApps0.alz_policy_assignment.json": {
+      "git_sha": "45c2b8081d42219edabcb56a9296668bc533fe6f",
+      "size": 910
+    },
+    "platform/alz/policy_assignments/Enforce-GR-ContInst0.alz_policy_assignment.json": {
+      "git_sha": "6319727b3564e69be717700cf9f8fc36dcc982c0",
+      "size": 926
+    },
+    "platform/alz/policy_assignments/Enforce-GR-ContReg0.alz_policy_assignment.json": {
+      "git_sha": "aef9bafabdfda6638e20748084fe757650a5cbba",
+      "size": 925
+    },
+    "platform/alz/policy_assignments/Enforce-GR-CosmosDb0.alz_policy_assignment.json": {
+      "git_sha": "debc7a32293a85c85676962f4b25828398c30819",
+      "size": 890
+    },
+    "platform/alz/policy_assignments/Enforce-GR-DataExpl0.alz_policy_assignment.json": {
+      "git_sha": "f3c250b52a4c9079077ae2d22854b23de2caf1a8",
+      "size": 906
+    },
+    "platform/alz/policy_assignments/Enforce-GR-DataFactory0.alz_policy_assignment.json": {
+      "git_sha": "e958c78283b309eaeb1b6d440da78874448d1c8c",
+      "size": 905
+    },
+    "platform/alz/policy_assignments/Enforce-GR-EventGrid0.alz_policy_assignment.json": {
+      "git_sha": "11cc69a36ec9c38c2c4871e59c7235dfbaf06ca1",
+      "size": 895
+    },
+    "platform/alz/policy_assignments/Enforce-GR-EventHub0.alz_policy_assignment.json": {
+      "git_sha": "b277e5beec6384aa15ed05a71f1b5ac467158e20",
+      "size": 890
+    },
+    "platform/alz/policy_assignments/Enforce-GR-KeyVault.alz_policy_assignment.json": {
+      "git_sha": "03a882d26bb30fda1763b698d0ef68023c257448",
+      "size": 701
+    },
+    "platform/alz/policy_assignments/Enforce-GR-KeyVaultSup0.alz_policy_assignment.json": {
+      "git_sha": "37e826e61990f13746d9c1e647c04f43c60a664f",
+      "size": 939
+    },
+    "platform/alz/policy_assignments/Enforce-GR-Kubernetes0.alz_policy_assignment.json": {
+      "git_sha": "a0afe3d4d9e6cd580621dcc730b26a1958b2df21",
+      "size": 897
+    },
+    "platform/alz/policy_assignments/Enforce-GR-MachLearn0.alz_policy_assignment.json": {
+      "git_sha": "deee78c155f5e51092f314941d6ebdde6d7995cf",
+      "size": 919
+    },
+    "platform/alz/policy_assignments/Enforce-GR-MySQL0.alz_policy_assignment.json": {
+      "git_sha": "6de218ec3e3911e3d0bee488a9d2576c7eace280",
+      "size": 872
+    },
+    "platform/alz/policy_assignments/Enforce-GR-Network0.alz_policy_assignment.json": {
+      "git_sha": "9d234858bd2a1ca739d901d78d03710c347ddc88",
+      "size": 1164
+    },
+    "platform/alz/policy_assignments/Enforce-GR-OpenAI0.alz_policy_assignment.json": {
+      "git_sha": "1ce9e17602a6dffe0234887198d9563bfcf78755",
+      "size": 877
+    },
+    "platform/alz/policy_assignments/Enforce-GR-PostgreSQL0.alz_policy_assignment.json": {
+      "git_sha": "36bd69e0b4c79b9e92d842913159914abe45bcdd",
+      "size": 897
+    },
+    "platform/alz/policy_assignments/Enforce-GR-SQL0.alz_policy_assignment.json": {
+      "git_sha": "d4ef6313884dc87dc656c1fb9718e948a5085b36",
+      "size": 862
+    },
+    "platform/alz/policy_assignments/Enforce-GR-ServiceBus0.alz_policy_assignment.json": {
+      "git_sha": "651c4091cb80f2389257b3da71d8c382298c8e51",
+      "size": 900
+    },
+    "platform/alz/policy_assignments/Enforce-GR-Storage0.alz_policy_assignment.json": {
+      "git_sha": "21d3a6005b829e3e4c06ae3229f5d672565ec863",
+      "size": 882
+    },
+    "platform/alz/policy_assignments/Enforce-GR-Synapse0.alz_policy_assignment.json": {
+      "git_sha": "3295af8ff107ce9428fda0732b0da073fada8345",
+      "size": 882
+    },
+    "platform/alz/policy_assignments/Enforce-GR-VirtualDesk0.alz_policy_assignment.json": {
+      "git_sha": "d738ae7d26d0ca930c96581b386f3d91c34fe296",
+      "size": 917
+    },
+    "platform/alz/policy_assignments/Enforce-Subnet-Private.alz_policy_assignment.json": {
+      "git_sha": "bc99df2da551eadd5155bcdc8206895ffdaef14f",
+      "size": 896
+    },
+    "platform/alz/policy_assignments/Enforce-TLS-SSL-Q225.alz_policy_assignment.json": {
+      "git_sha": "cf5c5eb2e049cee6ba14e606c609f1e7158a93b6",
+      "size": 1166
+    },
+    "platform/alz/policy_definitions/Append-AppService-httpsonly.alz_policy_definition.json": {
+      "git_sha": "7e7c07170bc2a52efd4089eef40459b87e708bbb",
+      "size": 1606
+    },
+    "platform/alz/policy_definitions/Append-AppService-latestTLS.alz_policy_definition.json": {
+      "git_sha": "9b419fa909dab13b92fed65656b742df1934add6",
+      "size": 2009
+    },
+    "platform/alz/policy_definitions/Append-KV-SoftDelete.alz_policy_definition.json": {
+      "git_sha": "18ae19a1ac90922f0beaa09caeceff64ab56c0fd",
+      "size": 1235
+    },
+    "platform/alz/policy_definitions/Append-Redis-disableNonSslPort.alz_policy_definition.json": {
+      "git_sha": "8bf4d0c87500b23f863fd288c20acd750bb3e992",
+      "size": 1983
+    },
+    "platform/alz/policy_definitions/Append-Redis-sslEnforcement.alz_policy_definition.json": {
+      "git_sha": "445a002c43fa5beb16971e0cf8870e8be25d9756",
+      "size": 2414
+    },
+    "platform/alz/policy_definitions/Audit-AKS-kubenet.alz_policy_definition.json": {
+      "git_sha": "5c0b9fc9b89951859a750100fd754ca7842b9ad3",
+      "size": 1461
+    },
+    "platform/alz/policy_definitions/Audit-AzureHybridBenefit.alz_policy_definition.json": {
+      "git_sha": "a879d4a407b816cee675842d6ea2d884d3887109",
+      "size": 2356
+    },
+    "platform/alz/policy_definitions/Audit-Disks-UnusedResourcesCostOptimization.alz_policy_definition.json": {
+      "git_sha": "a312e95d1243ba8b0e84109fbdb76b1512eab2db",
+      "size": 1775
+    },
+    "platform/alz/policy_definitions/Audit-MachineLearning-PrivateEndpointId.alz_policy_definition.json": {
+      "git_sha": "09c3e52d6478025b36356df1ffbb75a32e6baad6",
+      "size": 1947
+    },
+    "platform/alz/policy_definitions/Audit-PrivateLinkDnsZones.alz_policy_definition.json": {
+      "git_sha": "a0007290eeddde94ca607231b217b0776781a1bd",
+      "size": 4820
+    },
+    "platform/alz/policy_definitions/Audit-PublicIpAddresses-UnusedResourcesCostOptimization.alz_policy_definition.json": {
+      "git_sha": "177328e9bae1dec356e284914aa8bcc5a728e9c3",
+      "size": 2596
+    },
+    "platform/alz/policy_definitions/Audit-ServerFarms-UnusedResourcesCostOptimization.alz_policy_definition.json": {
+      "git_sha": "58ca421d016cbdd7fd70885b24cbf8bc780b2801",
+      "size": 1536
+    },
+    "platform/alz/policy_definitions/Audit-Tags-Mandatory-Rg.alz_policy_definition.json": {
+      "git_sha": "582927853884f1044875e7890c64916ca403e6ac",
+      "size": 2571
+    },
+    "platform/alz/policy_definitions/Audit-Tags-Mandatory.alz_policy_definition.json": {
+      "git_sha": "abae377eca4d12c5bef7eb06d2eb4060402ec280",
+      "size": 1782
+    },
+    "platform/alz/policy_definitions/Deny-AA-child-resources.alz_policy_definition.json": {
+      "git_sha": "106643f2eca40100186171d3ac815ab396429a6a",
+      "size": 1549
+    },
+    "platform/alz/policy_definitions/Deny-APIM-TLS.alz_policy_definition.json": {
+      "git_sha": "1f920a7bd876642928d53c2efb1027136bca32b3",
+      "size": 2273
+    },
+    "platform/alz/policy_definitions/Deny-AppGW-Without-WAF.alz_policy_definition.json": {
+      "git_sha": "e3d2fafe5b8807baeca19fb787ca1550cee8090a",
+      "size": 1361
+    },
+    "platform/alz/policy_definitions/Deny-AppGw-Without-Tls.alz_policy_definition.json": {
+      "git_sha": "3d2dbc7b16fff23be722d8917ea2c6a19b185860",
+      "size": 2225
+    },
+    "platform/alz/policy_definitions/Deny-AppService-without-BYOC.alz_policy_definition.json": {
+      "git_sha": "448c77353c37dc3ac681fa5d46c5c9fa8bcd0774",
+      "size": 1556
+    },
+    "platform/alz/policy_definitions/Deny-AppServiceApiApp-http.alz_policy_definition.json": {
+      "git_sha": "11c98f0e78247ec353ec0a9c726a5ea9e24a565b",
+      "size": 1424
+    },
+    "platform/alz/policy_definitions/Deny-AppServiceFunctionApp-http.alz_policy_definition.json": {
+      "git_sha": "faf09095ba0ceaf0765d651e67097bcb2ff40741",
+      "size": 1442
+    },
+    "platform/alz/policy_definitions/Deny-AppServiceWebApp-http.alz_policy_definition.json": {
+      "git_sha": "5ed6126d3ccc175cd2806207e2eeba92c10969bc",
+      "size": 1432
+    },
+    "platform/alz/policy_definitions/Deny-AzFw-Without-Policy.alz_policy_definition.json": {
+      "git_sha": "cdcd9672f043e820652df091cc581dcee09a8d57",
+      "size": 1338
+    },
+    "platform/alz/policy_definitions/Deny-CognitiveServices-NetworkAcls.alz_policy_definition.json": {
+      "git_sha": "75d2ea62dd8f2a775152e1f401c27ea786b57979",
+      "size": 1830
+    },
+    "platform/alz/policy_definitions/Deny-CognitiveServices-Resource-Kinds.alz_policy_definition.json": {
+      "git_sha": "a159f30d27f10a253a837947392c7a9108c4705a",
+      "size": 2453
+    },
+    "platform/alz/policy_definitions/Deny-CognitiveServices-RestrictOutboundNetworkAccess.alz_policy_definition.json": {
+      "git_sha": "8d4a714a07d801f4ca7a7c9a8a6b7b2f79ce147e",
+      "size": 1694
+    },
+    "platform/alz/policy_definitions/Deny-Databricks-NoPublicIp.alz_policy_definition.json": {
+      "git_sha": "0e7f1f8a7ec708197e482014212aa1b1b75f31f6",
+      "size": 1329
+    },
+    "platform/alz/policy_definitions/Deny-Databricks-Sku.alz_policy_definition.json": {
+      "git_sha": "a5aae10e205d4163ffd76ce6e99c11374179e183",
+      "size": 1386
+    },
+    "platform/alz/policy_definitions/Deny-Databricks-VirtualNetwork.alz_policy_definition.json": {
+      "git_sha": "d518e225a4d86dd38bbdb7fd18f752900f712d36",
+      "size": 1695
+    },
+    "platform/alz/policy_definitions/Deny-EH-Premium-CMK.alz_policy_definition.json": {
+      "git_sha": "7fe048a6e53ed1c6bcaf7ecd381ccd7bb5a05b94",
+      "size": 1527
+    },
+    "platform/alz/policy_definitions/Deny-EH-minTLS.alz_policy_definition.json": {
+      "git_sha": "64463c9860294180a19927f31ab16f50329424f8",
+      "size": 1775
+    },
+    "platform/alz/policy_definitions/Deny-FileServices-InsecureAuth.alz_policy_definition.json": {
+      "git_sha": "9bfb1e9b55541a3868d1157ddf42d78eaf47d014",
+      "size": 1901
+    },
+    "platform/alz/policy_definitions/Deny-FileServices-InsecureKerberos.alz_policy_definition.json": {
+      "git_sha": "b6d59594410329d42a72a8ca1bf784baacbfd936",
+      "size": 1959
+    },
+    "platform/alz/policy_definitions/Deny-FileServices-InsecureSmbChannel.alz_policy_definition.json": {
+      "git_sha": "8c7616e4127240fe8a2a9501c4eaf696bced772e",
+      "size": 2231
+    },
+    "platform/alz/policy_definitions/Deny-FileServices-InsecureSmbVersions.alz_policy_definition.json": {
+      "git_sha": "754c6c7824347982a0468747c658430c25bdd8da",
+      "size": 2137
+    },
+    "platform/alz/policy_definitions/Deny-LogicApp-Public-Network.alz_policy_definition.json": {
+      "git_sha": "b65c8c2fd2bb4ee564aed779ac97d1b53f3f74c5",
+      "size": 1783
+    },
+    "platform/alz/policy_definitions/Deny-LogicApps-Without-Https.alz_policy_definition.json": {
+      "git_sha": "6a4dc10d4c9bcd617841abac6c2d1c13ceadb4c9",
+      "size": 1636
+    },
+    "platform/alz/policy_definitions/Deny-MachineLearning-Aks.alz_policy_definition.json": {
+      "git_sha": "ec39fa229a0b44b068c943e65a2ae820c82323d8",
+      "size": 1734
+    },
+    "platform/alz/policy_definitions/Deny-MachineLearning-Compute-SubnetId.alz_policy_definition.json": {
+      "git_sha": "15e99f3e58f2c3967c70750280d4575facb480ef",
+      "size": 1851
+    },
+    "platform/alz/policy_definitions/Deny-MachineLearning-Compute-VmSize.alz_policy_definition.json": {
+      "git_sha": "a4045b1a07fb831a7047669663dd65589fbd97fb",
+      "size": 4209
+    },
+    "platform/alz/policy_definitions/Deny-MachineLearning-ComputeCluster-RemoteLoginPortPublicAccess.alz_policy_definition.json": {
+      "git_sha": "a9f2879a6e67ae68cad57f16ffe870f0651b203a",
+      "size": 1777
+    },
+    "platform/alz/policy_definitions/Deny-MachineLearning-ComputeCluster-Scale.alz_policy_definition.json": {
+      "git_sha": "0a117579721cb14a881ab2753428cf0c3ce6d737",
+      "size": 3013
+    },
+    "platform/alz/policy_definitions/Deny-MachineLearning-HbiWorkspace.alz_policy_definition.json": {
+      "git_sha": "7f48aefd89590ab73d89951ff0acfdba58f6e546",
+      "size": 1542
+    },
+    "platform/alz/policy_definitions/Deny-MachineLearning-PublicAccessWhenBehindVnet.alz_policy_definition.json": {
+      "git_sha": "ead932e584b2d97bdf14b7fb6d06a08fe2f6552b",
+      "size": 1602
+    },
+    "platform/alz/policy_definitions/Deny-MgmtPorts-From-Internet.alz_policy_definition.json": {
+      "git_sha": "aa2382e1b9b225ecf0344ab4e0db521ad8ab2bab",
+      "size": 12779
+    },
+    "platform/alz/policy_definitions/Deny-MySql-http.alz_policy_definition.json": {
+      "git_sha": "374c167e8752a90dc5cb87f11a128b1e461bea00",
+      "size": 2493
+    },
+    "platform/alz/policy_definitions/Deny-PostgreSql-http.alz_policy_definition.json": {
+      "git_sha": "0222ac79672dcebf96a95a3a80cea75fd501d51b",
+      "size": 2547
+    },
+    "platform/alz/policy_definitions/Deny-Private-DNS-Zones.alz_policy_definition.json": {
+      "git_sha": "2e17b27266f6be648a4b2026260480944c6cb233",
+      "size": 1215
+    },
+    "platform/alz/policy_definitions/Deny-Redis-http.alz_policy_definition.json": {
+      "git_sha": "53c32bd09c0263be63abfdea600a6c68d4125ec4",
+      "size": 2222
+    },
+    "platform/alz/policy_definitions/Deny-Service-Endpoints.alz_policy_definition.json": {
+      "git_sha": "b541fb17031b5a1f497376e7e761909fdd397203",
+      "size": 1627
+    },
+    "platform/alz/policy_definitions/Deny-Sql-minTLS.alz_policy_definition.json": {
+      "git_sha": "e1105be6980877a1a72f076668c81cd25d9cd0bb",
+      "size": 2099
+    },
+    "platform/alz/policy_definitions/Deny-SqlMi-minTLS.alz_policy_definition.json": {
+      "git_sha": "ba5dbeba22938119290bdf9a721c33b6d7f2b98d",
+      "size": 2132
+    },
+    "platform/alz/policy_definitions/Deny-Storage-ContainerDeleteRetentionPolicy.alz_policy_definition.json": {
+      "git_sha": "c8eee15f3e8f1ea941d86c1a924a0371b3cdd586",
+      "size": 2261
+    },
+    "platform/alz/policy_definitions/Deny-Storage-CopyScope.alz_policy_definition.json": {
+      "git_sha": "8923b93c98379fa32ec53de8d83113c0e12fc030",
+      "size": 1944
+    },
+    "platform/alz/policy_definitions/Deny-Storage-CorsRules.alz_policy_definition.json": {
+      "git_sha": "7b4db07c84fca340e1239ad5e4eac66928272d42",
+      "size": 2725
+    },
+    "platform/alz/policy_definitions/Deny-Storage-LocalUser.alz_policy_definition.json": {
+      "git_sha": "c225af93b3d424cb714d8ae965d7e010f421328c",
+      "size": 1612
+    },
+    "platform/alz/policy_definitions/Deny-Storage-NetworkAclsBypass.alz_policy_definition.json": {
+      "git_sha": "5e12dd293bc66f970496f0a143eeaab5bb490f40",
+      "size": 2536
+    },
+    "platform/alz/policy_definitions/Deny-Storage-NetworkAclsVirtualNetworkRules.alz_policy_definition.json": {
+      "git_sha": "9cc5a27d096d55667bf365dcf272cac2f47d3f17",
+      "size": 1480
+    },
+    "platform/alz/policy_definitions/Deny-Storage-ResourceAccessRulesResourceId.alz_policy_definition.json": {
+      "git_sha": "1bc3052df53f4217e39c41a3cf8e7c89196e5a84",
+      "size": 1938
+    },
+    "platform/alz/policy_definitions/Deny-Storage-ResourceAccessRulesTenantId.alz_policy_definition.json": {
+      "git_sha": "3f5000fb895f2c812c12f3c1b245d19a8766cdf9",
+      "size": 1710
+    },
+    "platform/alz/policy_definitions/Deny-Storage-SFTP.alz_policy_definition.json": {
+      "git_sha": "d7e24c3f92a1c16ab0e22867df629946aaa94792",
+      "size": 1366
+    },
+    "platform/alz/policy_definitions/Deny-Storage-ServicesEncryption.alz_policy_definition.json": {
+      "git_sha": "2511eb4b13fba499dbbc9d6d6055d81490ac22b2",
+      "size": 3077
+    },
+    "platform/alz/policy_definitions/Deny-StorageAccount-CustomDomain.alz_policy_definition.json": {
+      "git_sha": "bc3f12ca3241c4b5ab0df9c1d10ac44009b532f7",
+      "size": 1675
+    },
+    "platform/alz/policy_definitions/Deny-Subnet-Without-Nsg.alz_policy_definition.json": {
+      "git_sha": "ddd71f8d1dd463346510ccb29c22c197671a66f9",
+      "size": 2878
+    },
+    "platform/alz/policy_definitions/Deny-Subnet-Without-Penp.alz_policy_definition.json": {
+      "git_sha": "7b4689978fe687add9edc1d901fbbe4f7f2b42c3",
+      "size": 3064
+    },
+    "platform/alz/policy_definitions/Deny-Subnet-Without-Udr.alz_policy_definition.json": {
+      "git_sha": "7c236dc7d3eb563c146ae028971e2d86dc87f247",
+      "size": 2736
+    },
+    "platform/alz/policy_definitions/Deny-UDR-With-Specific-NextHop.alz_policy_definition.json": {
+      "git_sha": "f7fa6eee631745e3205572f15f1aaf9be1b96034",
+      "size": 2467
+    },
+    "platform/alz/policy_definitions/Deny-VNET-Peer-Cross-Sub.alz_policy_definition.json": {
+      "git_sha": "d14ae4a9153d6aa489b41be7d0e1d26ce0f8ebd8",
+      "size": 2116
+    },
+    "platform/alz/policy_definitions/Deny-VNET-Peering-To-Non-Approved-VNETs.alz_policy_definition.json": {
+      "git_sha": "043b6a1c5465297a2099e7fcea3e374b9b64896c",
+      "size": 2634
+    },
+    "platform/alz/policy_definitions/Deny-VNet-Peering.alz_policy_definition.json": {
+      "git_sha": "c2f8eb3aa630ef822b90b0627f9738e02ac975d7",
+      "size": 1120
+    },
+    "platform/alz/policy_definitions/DenyAction-ActivityLogs.alz_policy_definition.json": {
+      "git_sha": "ed0e073177f0bd6bdb10d4e4d47965eff894c758",
+      "size": 931
+    },
+    "platform/alz/policy_definitions/DenyAction-DeleteResources.alz_policy_definition.json": {
+      "git_sha": "037c26f6ce674a65cf8d74c42429bc87b8f87782",
+      "size": 1983
+    },
+    "platform/alz/policy_definitions/DenyAction-DiagnosticLogs.alz_policy_definition.json": {
+      "git_sha": "cb1b6de59a47c6d1df78c83b139923630d316275",
+      "size": 896
+    },
+    "platform/alz/policy_definitions/Deploy-ASC-SecurityContacts.alz_policy_definition.json": {
+      "git_sha": "b777d284a18f9bb31fc9419119a8f3a96025403a",
+      "size": 7094
+    },
+    "platform/alz/policy_definitions/Deploy-Budget.alz_policy_definition.json": {
+      "git_sha": "84c4607e8a87290a6a74427bf6eda94f145bb996",
+      "size": 8213
+    },
+    "platform/alz/policy_definitions/Deploy-Custom-Route-Table.alz_policy_definition.json": {
+      "git_sha": "f6adc1305e4feb274dc50c9e14b640a43feef390",
+      "size": 8053
+    },
+    "platform/alz/policy_definitions/Deploy-DDoSProtection.alz_policy_definition.json": {
+      "git_sha": "1b1cd60945f270fb6d59e69d9b638b3a20f5ab54",
+      "size": 4824
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-AA.alz_policy_definition.json": {
+      "git_sha": "c2a4e0c3001f8aac6fc23a6976cd9b3855f851f8",
+      "size": 7215
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-ACI.alz_policy_definition.json": {
+      "git_sha": "9d868a3d73365657abe979cf80411fa39cd5ed65",
+      "size": 5838
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-ACR.alz_policy_definition.json": {
+      "git_sha": "806f86cf6a2c2b57c919eb84b15fcc870693002c",
+      "size": 6920
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-APIMgmt.alz_policy_definition.json": {
+      "git_sha": "bc294cbbbfed7c6f89ac37bb154bc21a33d8f3e5",
+      "size": 7710
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-AVDScalingPlans.alz_policy_definition.json": {
+      "git_sha": "30665bebdd4a1d330ff66bb4653abe104c058697",
+      "size": 5534
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-AnalysisService.alz_policy_definition.json": {
+      "git_sha": "1920c4b003bbef946e997b2b52bd8f8ebaa933c8",
+      "size": 6888
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-ApiForFHIR.alz_policy_definition.json": {
+      "git_sha": "46f28f8cba959c764842431560601f5875d2292b",
+      "size": 6718
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-ApplicationGateway.alz_policy_definition.json": {
+      "git_sha": "04d04b021d600832c904bf5190c83a5ab12b72eb",
+      "size": 7140
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-Bastion.alz_policy_definition.json": {
+      "git_sha": "992ee7cc9dc4b5564907dde08df95b071030de19",
+      "size": 6701
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-CDNEndpoints.alz_policy_definition.json": {
+      "git_sha": "8a5cc27c40e55b482763e4c3fe521d10b0c93454",
+      "size": 5598
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-CognitiveServices.alz_policy_definition.json": {
+      "git_sha": "634ad64999b8499fba6b46d2a5e87c7919d806f4",
+      "size": 7071
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-CosmosDB.alz_policy_definition.json": {
+      "git_sha": "58f388b4b65dfee2ddaa4adbb1cad9123765ac49",
+      "size": 8149
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-DLAnalytics.alz_policy_definition.json": {
+      "git_sha": "df857c8276108f526532459e9734d1832af04991",
+      "size": 6894
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-DataExplorerCluster.alz_policy_definition.json": {
+      "git_sha": "bc00c52c71b427d478033f384a77f393808fb761",
+      "size": 7793
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-DataFactory.alz_policy_definition.json": {
+      "git_sha": "87a0684acf303e6cbf5b6a20d7d662e0833c87d7",
+      "size": 8561
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-Databricks.alz_policy_definition.json": {
+      "git_sha": "5d4189aa803cb0d8a3a0eebae7707e4c070457d6",
+      "size": 10580
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-EventGridSub.alz_policy_definition.json": {
+      "git_sha": "7c5aa12e025f5721f1d5ff735149d1a3f0f096c7",
+      "size": 5868
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-EventGridSystemTopic.alz_policy_definition.json": {
+      "git_sha": "7872f5ed2653c4151bb76059801cd922aba9974f",
+      "size": 6748
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-EventGridTopic.alz_policy_definition.json": {
+      "git_sha": "86593ad4ffe6cce0da3debcb8b69fe41dcadc136",
+      "size": 7065
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-ExpressRoute.alz_policy_definition.json": {
+      "git_sha": "285ba5a6f853328f86af585e94c8a2b6c544f55e",
+      "size": 6718
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-Firewall.alz_policy_definition.json": {
+      "git_sha": "c84fa1c9130334b51a6949d44165b34d43f4395f",
+      "size": 10053
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-FrontDoor.alz_policy_definition.json": {
+      "git_sha": "7372da398e14ee962c0116dab2ea28d92c58fa02",
+      "size": 6888
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-Function.alz_policy_definition.json": {
+      "git_sha": "c93b1c5e04d3faf64323723117f977376a0366f3",
+      "size": 6852
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-HDInsight.alz_policy_definition.json": {
+      "git_sha": "698daa36d90c6b32f597a466fd72ac03a25dd9b8",
+      "size": 5800
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-LoadBalancer.alz_policy_definition.json": {
+      "git_sha": "2de665fe8965a6bf6ce064b1d6dbc9c8ee5e8e4f",
+      "size": 6905
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-LogAnalytics.alz_policy_definition.json": {
+      "git_sha": "0ac8c0207b26ad55ce71b4df4f848c1701450abc",
+      "size": 6736
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-LogicAppsISE.alz_policy_definition.json": {
+      "git_sha": "684e4225050a893c4fa402d94542e01b1c2296a3",
+      "size": 5709
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-MariaDB.alz_policy_definition.json": {
+      "git_sha": "ca480a61a9538c9d2f1000a16f448b9c35d8d98a",
+      "size": 6886
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-MediaService.alz_policy_definition.json": {
+      "git_sha": "52a0fcbe256cca484775e3c392a5366eb336e5c5",
+      "size": 6725
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-MlWorkspace.alz_policy_definition.json": {
+      "git_sha": "11f7fd906e4bc95a2d2acf473e7a962cda013a99",
+      "size": 11256
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-MySQL.alz_policy_definition.json": {
+      "git_sha": "f9cb1ed2bd26494a9c8d37dce51b6f4bacae1fa2",
+      "size": 6883
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-NIC.alz_policy_definition.json": {
+      "git_sha": "37873824217cda2fa2e53cae9a21640695abe801",
+      "size": 5801
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-NetworkSecurityGroups.alz_policy_definition.json": {
+      "git_sha": "c88886907ec410a9b8b47ddcf3d210ad6f3e19ea",
+      "size": 5855
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-PostgreSQL.alz_policy_definition.json": {
+      "git_sha": "cbb0a028a1616715cfa63ad81a0fe300405251ef",
+      "size": 8936
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-PowerBIEmbedded.alz_policy_definition.json": {
+      "git_sha": "62cf21015506e1c9f721bb301b2d05c656009238",
+      "size": 6725
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-RedisCache.alz_policy_definition.json": {
+      "git_sha": "f881e37298423653cf3fc22f44b7ee85b62c0aae",
+      "size": 5793
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-Relay.alz_policy_definition.json": {
+      "git_sha": "f020d257de32ea868da0a05c14365dc49241f803",
+      "size": 6673
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-SQLElasticPools.alz_policy_definition.json": {
+      "git_sha": "d77cbda258db6ca03545d353ee9bdde41cb12002",
+      "size": 5846
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-SQLMI.alz_policy_definition.json": {
+      "git_sha": "cd9fde036248bf34058465f5535ff5f486105441",
+      "size": 5945
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-SignalR.alz_policy_definition.json": {
+      "git_sha": "3d4f8c7749f11c687ad08d585dddf326c4c10de5",
+      "size": 6533
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-TimeSeriesInsights.alz_policy_definition.json": {
+      "git_sha": "0717dfcb180e07c88b1ede7c031aeb06955a7c0c",
+      "size": 6918
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-TrafficManager.alz_policy_definition.json": {
+      "git_sha": "b0b2efef9505baa968f970728447c83653fb91dd",
+      "size": 6741
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-VM.alz_policy_definition.json": {
+      "git_sha": "058581b909058d145e33bc3e77b198f80206e440",
+      "size": 5779
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-VMSS.alz_policy_definition.json": {
+      "git_sha": "fcc3420124db59f9f34e2e188b8759087e230464",
+      "size": 5829
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-VNetGW.alz_policy_definition.json": {
+      "git_sha": "34e4427420d3452c062b2f71b77959628476e0a0",
+      "size": 7435
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-VWanS2SVPNGW.alz_policy_definition.json": {
+      "git_sha": "13ecb49a3b8b6d708d46e97c4e65e76afbbf51a1",
+      "size": 7268
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-VirtualNetwork.alz_policy_definition.json": {
+      "git_sha": "edb8f84da6c6dedffa1f3deafd83b180c3ca6ce8",
+      "size": 6677
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-WVDAppGroup.alz_policy_definition.json": {
+      "git_sha": "50fdfc5c5e1312b4ef930ce23f9ff707fff1cdae",
+      "size": 5949
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-WVDHostPools.alz_policy_definition.json": {
+      "git_sha": "7e6a86384a40546af7ea19daa9045a2c98fbbcf2",
+      "size": 6982
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-WVDWorkspace.alz_policy_definition.json": {
+      "git_sha": "2aee69015c7d8875a65495d2a78d93f39735d4e5",
+      "size": 6078
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-WebServerFarm.alz_policy_definition.json": {
+      "git_sha": "14da37c48eb14972d652e8f8aeb0dbfece8e4c42",
+      "size": 5819
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-Website.alz_policy_definition.json": {
+      "git_sha": "2399d870646db2791b89704cdf36442c36259491",
+      "size": 9953
+    },
+    "platform/alz/policy_definitions/Deploy-Diagnostics-iotHub.alz_policy_definition.json": {
+      "git_sha": "5bae060d2f78304ce7a6bde9ebcbc8f986594b24",
+      "size": 8966
+    },
+    "platform/alz/policy_definitions/Deploy-FirewallPolicy.alz_policy_definition.json": {
+      "git_sha": "8a4932a708a227fc54e3184a3989a20cb3b34332",
+      "size": 5919
+    },
+    "platform/alz/policy_definitions/Deploy-LogicApp-TLS.alz_policy_definition.json": {
+      "git_sha": "dd0587354ed497dff76b2e6da8b08710c8dac6f3",
+      "size": 2912
+    },
+    "platform/alz/policy_definitions/Deploy-MySQL-sslEnforcement.alz_policy_definition.json": {
+      "git_sha": "78d670c68bc0a2ad46d55780334b2b9d4e24769c",
+      "size": 4839
+    },
+    "platform/alz/policy_definitions/Deploy-PostgreSQL-sslEnforcement.alz_policy_definition.json": {
+      "git_sha": "5cc833b3490b5016861a9559775a7f1c469773b1",
+      "size": 4910
+    },
+    "platform/alz/policy_definitions/Deploy-Private-DNS-Generic.alz_policy_definition.json": {
+      "git_sha": "91a44aa25e0289091a975b717fa583c4111cb88d",
+      "size": 5776
+    },
+    "platform/alz/policy_definitions/Deploy-SQL-minTLS.alz_policy_definition.json": {
+      "git_sha": "966c76593d89f624815089262fa7aad060426c0e",
+      "size": 4140
+    },
+    "platform/alz/policy_definitions/Deploy-Sql-AuditingSettings.alz_policy_definition.json": {
+      "git_sha": "9e6d45058ed7611a1e0af9eea7adfd8bbab23c98",
+      "size": 4387
+    },
+    "platform/alz/policy_definitions/Deploy-Sql-SecurityAlertPolicies.alz_policy_definition.json": {
+      "git_sha": "75c545c1ecc88b803a07b8e2e461db4354c2d951",
+      "size": 3986
+    },
+    "platform/alz/policy_definitions/Deploy-Sql-Tde.alz_policy_definition.json": {
+      "git_sha": "2bc0333a47143e197cb712c4e49c59dcb8abeb73",
+      "size": 3919
+    },
+    "platform/alz/policy_definitions/Deploy-Sql-vulnerabilityAssessments.alz_policy_definition.json": {
+      "git_sha": "b5be602ef58b8fe48f6fc8d44e819573847a6ef4",
+      "size": 5722
+    },
+    "platform/alz/policy_definitions/Deploy-Sql-vulnerabilityAssessments_20230706.alz_policy_definition.json": {
+      "git_sha": "ae787d1944737f1084b6ef746b5bf460d9354aac",
+      "size": 5672
+    },
+    "platform/alz/policy_definitions/Deploy-SqlMi-minTLS.alz_policy_definition.json": {
+      "git_sha": "92426d773096a84e613678bdbc4ebf66d36f8330",
+      "size": 4262
+    },
+    "platform/alz/policy_definitions/Deploy-Storage-sslEnforcement.alz_policy_definition.json": {
+      "git_sha": "abfb8978085898d663d421fa4cc4209e8e8686de",
+      "size": 4703
+    },
+    "platform/alz/policy_definitions/Deploy-UserAssignedManagedIdentity-VMInsights.alz_policy_definition.json": {
+      "git_sha": "7a0cbfd7cd384c1627e1a22d032f5208f0733bb4",
+      "size": 19152
+    },
+    "platform/alz/policy_definitions/Deploy-VNET-HubSpoke.alz_policy_definition.json": {
+      "git_sha": "2aafae6741fabff3fc7f79038585583ab3acb868",
+      "size": 12531
+    },
+    "platform/alz/policy_definitions/Deploy-Vm-autoShutdown.alz_policy_definition.json": {
+      "git_sha": "ab858982a2e55efd2a2b074b229686f303c35317",
+      "size": 7033
+    },
+    "platform/alz/policy_definitions/Deploy-Windows-DomainJoin.alz_policy_definition.json": {
+      "git_sha": "9835c1fb7ce92c877c5786075f57da5661a36ca6",
+      "size": 7264
+    },
+    "platform/alz/policy_definitions/Modify-NSG.alz_policy_definition.json": {
+      "git_sha": "aefe1277bddbad26f3e4f7b48ec53117cfd5a008",
+      "size": 3759
+    },
+    "platform/alz/policy_definitions/Modify-UDR.alz_policy_definition.json": {
+      "git_sha": "954a7b723ca7ee24d1ad86a21598eb1e36658274",
+      "size": 3082
+    },
+    "platform/alz/policy_set_definitions/Audit-TrustedLaunch.1.0.0.alz_policy_set_definition.json": {
+      "git_sha": "7d0c803860bec3be5ce9571399da4ade5f4e6a3e",
+      "size": 1858
+    },
+    "platform/alz/policy_set_definitions/Audit-UnusedResourcesCostOptimization.alz_policy_set_definition.json": {
+      "git_sha": "d890811f808c2b4999a0be97b30aa815621debca",
+      "size": 3744
+    },
+    "platform/alz/policy_set_definitions/Deny-PublicPaaSEndpoints.alz_policy_set_definition.json": {
+      "git_sha": "56da6b34771297c1499221848b4d508b87153799",
+      "size": 33933
+    },
+    "platform/alz/policy_set_definitions/DenyAction-DeleteProtection.alz_policy_set_definition.json": {
+      "git_sha": "14b75057bd15123aae5a9b4981a450d393700709",
+      "size": 1360
+    },
+    "platform/alz/policy_set_definitions/Deploy-AUM-CheckUpdates.alz_policy_set_definition.json": {
+      "git_sha": "67e32c5d8c8ee56dfd8cd35d3d73ff3ff8b1116a",
+      "size": 5055
+    },
+    "platform/alz/policy_set_definitions/Deploy-MDFC-Config_20240319.alz_policy_set_definition.json": {
+      "git_sha": "3985a3f6b7654d85c0cc6d4c3b736ae90c2db33d",
+      "size": 23786
+    },
+    "platform/alz/policy_set_definitions/Deploy-Private-DNS-Zones.alz_policy_set_definition.json": {
+      "git_sha": "36894f0e488169ce3556dee608b008637695f355",
+      "size": 97119
+    },
+    "platform/alz/policy_set_definitions/Deploy-Sql-Security_20240529.alz_policy_set_definition.json": {
+      "git_sha": "db87e9f7e6dcd912c7084c1e8541ba161e42f5df",
+      "size": 5250
+    },
+    "platform/alz/policy_set_definitions/Enforce-ACSB.alz_policy_set_definition.json": {
+      "git_sha": "139e2c6c8a3b5750d01268d55f1749e2fd8557ad",
+      "size": 3103
+    },
+    "platform/alz/policy_set_definitions/Enforce-ALZ-Decomm.alz_policy_set_definition.json": {
+      "git_sha": "511756f7342add5cede5c0cfc968f88a45502339",
+      "size": 1732
+    },
+    "platform/alz/policy_set_definitions/Enforce-ALZ-Sandbox.alz_policy_set_definition.json": {
+      "git_sha": "43d819913bfa0b60924626c5b90afed46df47355",
+      "size": 2597
+    },
+    "platform/alz/policy_set_definitions/Enforce-Backup.1.0.0.alz_policy_set_definition.json": {
+      "git_sha": "0755df1b3958146a6e5464cd576571a644dfff3a",
+      "size": 4867
+    },
+    "platform/alz/policy_set_definitions/Enforce-EncryptTransit_20240509.alz_policy_set_definition.json": {
+      "git_sha": "ada1d49172ca8c79ac3d9d311ebb34450e8cca23",
+      "size": 38956
+    },
+    "platform/alz/policy_set_definitions/Enforce-EncryptTransit_20241211.alz_policy_set_definition.json": {
+      "git_sha": "83cf508fbef0a74c21011ba529fa70a921e0985c",
+      "size": 38157
+    },
+    "platform/alz/policy_set_definitions/Enforce-Encryption-CMK_20250218.alz_policy_set_definition.json": {
+      "git_sha": "454760a808ede1c5b4013a83369e5678bc493126",
+      "size": 26696
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-APIM.alz_policy_set_definition.json": {
+      "git_sha": "a5b36794b8e3df462443d080cc47ca0500b5edfd",
+      "size": 7164
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-AppServices.alz_policy_set_definition.json": {
+      "git_sha": "dce974c368bf4326bd99f00aa2d37c8f8ec50f22",
+      "size": 12018
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-Automation.alz_policy_set_definition.json": {
+      "git_sha": "726f0e8af2d497a5a0b292ab66cc31de281ae5ba",
+      "size": 4171
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-BotService.alz_policy_set_definition.json": {
+      "git_sha": "a9d83f24b541effa6657e50c9b03d306bde01b92",
+      "size": 3165
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-CognitiveServices.alz_policy_set_definition.json": {
+      "git_sha": "3ab69564fc4b4f46d2c373a01d9f38e5b5e92b1b",
+      "size": 6270
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-Compute.alz_policy_set_definition.json": {
+      "git_sha": "07fa950ea2c1b781e72e9678acd82bb82eddb6b2",
+      "size": 1865
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-ContainerApps.alz_policy_set_definition.json": {
+      "git_sha": "1c03d75d6a23bfc495fbfb4e8e657d0beaeeffc6",
+      "size": 1924
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-ContainerInstance.alz_policy_set_definition.json": {
+      "git_sha": "ea6d77ba9ee7b6634631d0c3aba8806bae6dfaf5",
+      "size": 1302
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-ContainerRegistry.alz_policy_set_definition.json": {
+      "git_sha": "7372a95c589de705e3fcca0c472f0c34c71f6a48",
+      "size": 8186
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-CosmosDb.alz_policy_set_definition.json": {
+      "git_sha": "6822fc454f47c0ff8a42fb721fd67475ff4586a4",
+      "size": 3899
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-DataExplorer.alz_policy_set_definition.json": {
+      "git_sha": "0ec526f3afcad4dda04281f4471a8823443390ab",
+      "size": 3034
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-DataFactory.alz_policy_set_definition.json": {
+      "git_sha": "6a7e4c63737b90d9481b99d6282ad62900c7d116",
+      "size": 3625
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-EventGrid.alz_policy_set_definition.json": {
+      "git_sha": "fabe20c436b2827e30484992413820b479d04f90",
+      "size": 5638
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-EventHub.alz_policy_set_definition.json": {
+      "git_sha": "c46dcab1d90a7a2524594dd352d1059744f5e4ba",
+      "size": 3075
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-KeyVault-Sup.alz_policy_set_definition.json": {
+      "git_sha": "764e3349c1b3726e02395b850ff2d81bf225a7cf",
+      "size": 1883
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-KeyVault_20260203.alz_policy_set_definition.json": {
+      "git_sha": "fc63c77429ef512f0504b4dd72b9287edd852312",
+      "size": 25630
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-Kubernetes.alz_policy_set_definition.json": {
+      "git_sha": "88d2b4696991be3f62cf8164064439509ae9d6c0",
+      "size": 11015
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-MachineLearning.alz_policy_set_definition.json": {
+      "git_sha": "32ef979311a8c2a695a37e63aa532fdc395423b9",
+      "size": 8831
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-MySQL.alz_policy_set_definition.json": {
+      "git_sha": "84a283f2cca9bd8ac48f70c155d54621df1f02aa",
+      "size": 1868
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-Network_20250326.alz_policy_set_definition.json": {
+      "git_sha": "bdc03b7f67d35c66d2fb94685c84889c5a968669",
+      "size": 13695
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-OpenAI.alz_policy_set_definition.json": {
+      "git_sha": "dd686cc932f8616c0d551beb414486b12dc01646",
+      "size": 7580
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-PostgreSQL.alz_policy_set_definition.json": {
+      "git_sha": "3c87334ef6fa96e97644a7c89c6451c6cfeb421b",
+      "size": 1307
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-SQL.alz_policy_set_definition.json": {
+      "git_sha": "5feff06175bff87cad24bad3587fed2ec85444f4",
+      "size": 4129
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-ServiceBus.alz_policy_set_definition.json": {
+      "git_sha": "f30a051256d993c656c0d9f1a5ea4d00ff67d19f",
+      "size": 3071
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-Storage.alz_policy_set_definition.json": {
+      "git_sha": "827d5d24b1bd52431b148f55fcf9d5a1a9b61f71",
+      "size": 15376
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-Synapse.alz_policy_set_definition.json": {
+      "git_sha": "a2e1d561133e6087798a09bd09e8dc77eecab586",
+      "size": 6215
+    },
+    "platform/alz/policy_set_definitions/Enforce-Guardrails-VirtualDesktop.alz_policy_set_definition.json": {
+      "git_sha": "b133254799e352dd81009ca9b0a20d819010fa39",
+      "size": 1947
+    },
+    "platform/alz/role_definitions/Application-Owners.alz_role_definition.json": {
+      "git_sha": "080a8899076d3440c89f1dccfdbe2e47ac71d675",
+      "size": 959
+    },
+    "platform/alz/role_definitions/Network-Management.alz_role_definition.json": {
+      "git_sha": "e714be440f73541ebd89b5f05c80f2931865da0a",
+      "size": 866
+    },
+    "platform/alz/role_definitions/Network-Subnet-Contributor.alz_role_definition.json": {
+      "git_sha": "17ed3f81c783b67a74593056e91cc3843fba9d32",
+      "size": 1185
+    },
+    "platform/alz/role_definitions/Security-Operations.alz_role_definition.json": {
+      "git_sha": "1c3379f075f796db8d3f33b6ec7ddce72d4db57e",
+      "size": 1365
+    },
+    "platform/alz/role_definitions/Subscription-Owner.alz_role_definition.json": {
+      "git_sha": "2b9123f7a43447fb9010f3ff521c1661357cef05",
+      "size": 978
+    },
+    "platform/alz/scripts/.gitignore": {
+      "git_sha": "419ecc09a4286d820072b216f6c5468a103e1e55",
+      "size": 20
+    },
+    "platform/alz/scripts/CreatePrivateDnsZoneDefaultArray.ps1": {
+      "git_sha": "e4f396aa15153581ac61e6338776df459eaaf976",
+      "size": 3486
+    },
+    "platform/alz/scripts/Invoke-LibraryUpdatePolicyAssignmentArchetypes.ps1": {
+      "git_sha": "b54d38c5e13e702f65b5e8a08588b632dca93f84",
+      "size": 15107
+    },
+    "platform/alz/scripts/Invoke-LibraryUpdatePolicyDefinitions.ps1": {
+      "git_sha": "85917509741db4766d68dcce716fc88e04952461",
+      "size": 6085
+    },
+    "platform/slz/README.md": {
+      "git_sha": "db7f689e34b828aea80ed37d100791215782a49c",
+      "size": 27524
+    },
+    "platform/slz/alz_library_metadata.json": {
+      "git_sha": "1816268ff9c6c00388fce844d18f23ca12c4a29f",
+      "size": 450
+    },
+    "platform/slz/alz_policy_default_values.json": {
+      "git_sha": "0b58510bb571f940878e9a63a6de70d21776ba93",
+      "size": 652
+    },
+    "platform/slz/archetype_definitions/confidential_corp.alz_archetype_definition.json": {
+      "git_sha": "1b92e0bbc267e2980da94885e3d6c7d15d93a793",
+      "size": 180
+    },
+    "platform/slz/archetype_definitions/confidential_online.alz_archetype_definition.json": {
+      "git_sha": "cbce47fbc12b4c5a0f647aa4329f33af6bb41b9d",
+      "size": 182
+    },
+    "platform/slz/archetype_definitions/public.alz_archetype_definition.json": {
+      "git_sha": "d755a8d8a9af79e835729cca13c685c8ee891265",
+      "size": 164
+    },
+    "platform/slz/archetype_definitions/sovereign_root.alz_archetype_definition.json": {
+      "git_sha": "92d0d783c9a42c96213ee4f6c64242a99859fd25",
+      "size": 181
+    },
+    "platform/slz/architecture_definitions/slz.alz_architecture_definition.json": {
+      "git_sha": "8b8bdd79eac7617589296e17a159eaeaf9d47291",
+      "size": 2753
+    },
+    "platform/slz/policy_assignments/Deny-L3-IP-Routing.alz_policy_assignment.json": {
+      "git_sha": "1b155d239e0efa86fc759bdf98627cd432703abd",
+      "size": 1892
+    },
+    "platform/slz/policy_assignments/Enforce-Sovereign-Conf.alz_policy_assignment.json": {
+      "git_sha": "a50e220d8c56735f868454bb14e1dcbbe3b0aa75",
+      "size": 14600
+    },
+    "platform/slz/policy_assignments/Enforce-Sovereign-Global.alz_policy_assignment.json": {
+      "git_sha": "e37104f7e79b8313cf6d12f5d9e793aab0a4dd1b",
+      "size": 1146
+    }
+  },
+  "source": "https://github.com/Azure/Azure-Landing-Zones-Library"
+}

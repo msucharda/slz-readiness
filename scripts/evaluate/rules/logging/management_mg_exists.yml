@@ -1,0 +1,23 @@
+rule_id: logging.management_mg_exists
+design_area: logging
+severity: high
+description: >-
+  The SLZ reference architecture requires a dedicated `management` management
+  group under `platform` to host the Log Analytics workspace, automation
+  account, and related management-plane resources.
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/slz/architecture_definitions/slz.alz_architecture_definition.json
+  sha: 8b8bdd79eac7617589296e17a159eaeaf9d47291
+matcher:
+  type: contains_all
+  selector:
+    resource_type: microsoft.management/managementgroups.summary
+  aggregate: tenant
+  path: present_ids
+expected:
+  - management
+message: >-
+  The `management` management group (child of `platform`) is not present.
+  Create it before deploying the central Log Analytics workspace.
+remediation_template: management-groups

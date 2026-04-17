@@ -1,0 +1,12 @@
+{
+  "name": "slz-readiness",
+  "description": "Sovereign Landing Zone readiness tooling for Azure.",
+  "owner": { "name": "msucharda" },
+  "plugins": [
+    {
+      "name": "slz-readiness",
+      "source": ".",
+      "description": "SLZ readiness audit plugin: discover, evaluate, plan, scaffold."
+    }
+  ]
+}

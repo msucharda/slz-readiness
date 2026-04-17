@@ -1,0 +1,35 @@
+{
+  "_comment": "Synthetic fixture: a minimally-compliant tenant that's missing the SLZ hierarchy and sovereign policy assignments. Used by golden tests to pin evaluate-engine output.",
+  "findings": [
+    {
+      "resource_type": "microsoft.management/managementgroups.summary",
+      "resource_id": "tenant",
+      "scope": "/",
+      "observed_state": {
+        "present_ids": ["root", "tenant-root"]
+      },
+      "query_cmd": "az account management-group list --query [].name -o json"
+    },
+    {
+      "resource_type": "microsoft.authorization/policyassignments",
+      "resource_id": "scope:mg/slz",
+      "scope": "mg/slz",
+      "observed_state": [],
+      "query_cmd": "az policy assignment list --scope /providers/Microsoft.Management/managementGroups/slz -o json"
+    },
+    {
+      "resource_type": "microsoft.authorization/policyassignments",
+      "resource_id": "scope:mg/confidential_corp",
+      "scope": "mg/confidential_corp",
+      "observed_state": [],
+      "query_cmd": "az policy assignment list --scope /providers/Microsoft.Management/managementGroups/confidential_corp -o json"
+    },
+    {
+      "resource_type": "microsoft.authorization/policyassignments",
+      "resource_id": "scope:mg/confidential_online",
+      "scope": "mg/confidential_online",
+      "observed_state": [],
+      "query_cmd": "az policy assignment list --scope /providers/Microsoft.Management/managementGroups/confidential_online -o json"
+    }
+  ]
+}

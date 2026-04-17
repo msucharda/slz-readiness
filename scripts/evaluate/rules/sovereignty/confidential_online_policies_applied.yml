@@ -1,0 +1,25 @@
+rule_id: sovereignty.confidential_online_policies_applied
+design_area: sovereignty
+severity: critical
+description: >-
+  Confidential-Online landing zones must carry every policy assignment
+  declared in the confidential_online archetype (Microsoft Cloud for
+  Sovereignty's Confidential Policies).
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/slz/archetype_definitions/confidential_online.alz_archetype_definition.json
+  sha: cbce47fbc12b4c5a0f647aa4329f33af6bb41b9d
+matcher:
+  type: archetype_policies_applied
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/confidential_online
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/slz/archetype_definitions/confidential_online.alz_archetype_definition.json
+    sha: cbce47fbc12b4c5a0f647aa4329f33af6bb41b9d
+expected: null
+message: >-
+  Confidential-Online archetype policies are missing.
+remediation_template: sovereignty-policies

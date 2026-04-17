@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "management-groups.params",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["parentManagementGroupId"],
+  "properties": {
+    "slzDisplayName": { "type": "string", "default": "Sovereign Landing Zone" },
+    "parentManagementGroupId": { "type": "string", "description": "Tenant root MG id (usually tenant id)." }
+  }
+}

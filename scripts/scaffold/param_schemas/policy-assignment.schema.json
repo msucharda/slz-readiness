@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "policy-assignment.params",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assignmentName", "displayName", "policyDefinitionId"],
+  "properties": {
+    "assignmentName": { "type": "string", "minLength": 1, "maxLength": 24 },
+    "displayName": { "type": "string" },
+    "policyDefinitionId": { "type": "string", "pattern": "^/providers/Microsoft.Authorization/policy(Set)?Definitions/" },
+    "enforcementMode": { "type": "string", "enum": ["Default", "DoNotEnforce"], "default": "Default" },
+    "parameters": { "type": "object", "default": {} },
+    "nonComplianceMessages": { "type": "array", "default": [] }
+  }
+}

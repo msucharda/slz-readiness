@@ -1,0 +1,29 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build plugin zip
+        run: |
+          mkdir -p out/slz-readiness
+          rsync -a --exclude='.git' --exclude='.github/workflows' \
+                --exclude='plugin-pack' --exclude='artifacts' \
+                --exclude='.pytest_cache' --exclude='__pycache__' \
+                --exclude='*.egg-info' --exclude='.venv' \
+                ./ out/slz-readiness/
+          chmod +x out/slz-readiness/hooks/*.sh || true
+          cd out && zip -r ../slz-readiness-${{ github.ref_name }}.zip slz-readiness
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: slz-readiness-*.zip
+          generate_release_notes: true

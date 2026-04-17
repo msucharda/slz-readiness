@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg
+
+# APM
+apm_modules/
+apm.lock.yaml
+
+# Plugin pack output
+plugin-pack/
+*.plugin.zip
+
+# Run artifacts (per-invocation; never committed)
+artifacts/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp

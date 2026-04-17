@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "role-assignment.params",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assignmentName", "roleDefinitionId", "principalId"],
+  "properties": {
+    "assignmentName": { "type": "string" },
+    "roleDefinitionId": { "type": "string" },
+    "principalId": { "type": "string" },
+    "principalType": { "type": "string", "enum": ["User", "Group", "ServicePrincipal", "ForeignGroup", "Device"], "default": "Group" }
+  }
+}

@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slz-readiness"
+version = "0.1.0"
+description = "Deterministic SLZ/ALZ readiness rule engine + discover scripts."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "sovereign-cloud-day contributors" }]
+dependencies = [
+  "pyyaml>=6.0.1",
+  "jsonschema>=4.21",
+  "rich>=13.7",
+  "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=4.1",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "types-PyYAML",
+  "types-jsonschema",
+]
+
+[project.scripts]
+slz-evaluate = "slz_readiness.evaluate.cli:main"
+slz-discover = "slz_readiness.discover.cli:main"
+slz-scaffold = "slz_readiness.scaffold.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["scripts"]
+include = ["slz_readiness*"]
+
+[tool.setuptools.package-dir]
+"" = "scripts"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "N"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+pythonpath = ["scripts"]
