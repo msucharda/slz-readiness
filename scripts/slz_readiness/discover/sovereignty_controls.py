@@ -12,30 +12,42 @@ them if/when a Tier-3 rule lands.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable, Optional
 
 from .az_common import AzError, az_cmd_str, error_finding, run_az
 
 SOVEREIGN_ASSIGNMENTS = ("Enforce-Sovereign-Global", "Enforce-Sovereign-Conf")
 
 
-def discover() -> list[dict[str, Any]]:
+def discover(
+    progress_cb: Optional[Callable[[str, int, int], None]] = None,
+    subscription_filter: Optional[set[str]] = None,
+) -> list[dict[str, Any]]:
     try:
         subs = run_az(["account", "list", "--all"])
     except AzError:
         # subscription_inventory emits a detailed error_finding for this.
         return []
     findings: list[dict[str, Any]] = []
-    for sub in subs or []:
+    sub_list = [s for s in (subs or []) if (s.get("id") or s.get("subscriptionId"))]
+    if subscription_filter is not None:
+        sub_list = [
+            s for s in sub_list
+            if (s.get("id") or s.get("subscriptionId")) in subscription_filter
+        ]
+    total = len(sub_list) * len(SOVEREIGN_ASSIGNMENTS)
+    i = 0
+    for sub in sub_list:
         sub_id = sub.get("id") or sub.get("subscriptionId") or ""
-        if not sub_id:
-            continue
         for assignment in SOVEREIGN_ASSIGNMENTS:
+            i += 1
+            if progress_cb is not None:
+                progress_cb(f"sub={sub_id} assignment={assignment}", i, total)
             args = [
                 "policy", "state", "list",
                 "--subscription", sub_id,
-                "--filter", f"PolicyAssignmentName eq '{assignment}'",
-                "--query", "[?complianceState=='NonCompliant']",
+                "--filter",
+                f"PolicyAssignmentName eq '{assignment}' and complianceState eq 'NonCompliant'",
             ]
             try:
                 rows = run_az(args)

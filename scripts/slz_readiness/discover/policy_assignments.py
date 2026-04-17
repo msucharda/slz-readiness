@@ -1,7 +1,7 @@
 """Discover Azure Policy assignments at the SLZ management-group scopes."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable, Optional
 
 from .az_common import AzError, az_cmd_str, error_finding, run_az
 
@@ -25,9 +25,15 @@ SCOPES = [
 ]
 
 
-def discover() -> list[dict[str, Any]]:
+def discover(progress_cb: Optional[Callable[[str, int, int], None]] = None) -> list[dict[str, Any]]:
+    from .mg_hierarchy import present_mg_ids
+
+    present = set(present_mg_ids())
+    targets = [mg for mg in SCOPES if mg in present]
     findings: list[dict[str, Any]] = []
-    for mg in SCOPES:
+    for i, mg in enumerate(targets, start=1):
+        if progress_cb is not None:
+            progress_cb(f"mg={mg}", i, len(targets))
         scope_arg = f"/providers/Microsoft.Management/managementGroups/{mg}"
         args = ["policy", "assignment", "list", "--scope", scope_arg]
         try:

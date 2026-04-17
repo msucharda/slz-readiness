@@ -41,6 +41,15 @@ When producing `plan.md`:
 
 `/slz-run` pauses between every phase for user approval. Never auto-advance unless the user explicitly passes `--no-pause`.
 
+### 6a. Tenant + subscription scope is always confirmed
+
+Before running **Discover** on any new run, the agent MUST:
+
+1. Explicitly ask the user **which tenant** to target. Enumerate available tenants via `az account list` rather than assuming the currently-active one — users often have multiple tenant memberships.
+2. Explicitly ask **which subscription scope** to use: either a specific set of subscription ids, or all subscriptions in the tenant. The default is *all*, but the user must confirm it.
+3. Pass the chosen scope to `slz-discover` via `--tenant <id>` and either `--subscription <id>` (repeatable) or `--all-subscriptions`. The CLI refuses to run without both flags set; this is a guard-rail, not a suggestion.
+4. If the chosen tenant differs from the active `az account show` tenant, ask the user to run `az login --tenant <id>` themselves — the read-only-verb hook does not permit the agent to run `login`.
+
 ## 7. Log every decision
 
 All commands run, all rule ids fired, and every template parameterisation go into `artifacts/<run>/trace.jsonl`. This file is evidence for the customer's own audit trail.

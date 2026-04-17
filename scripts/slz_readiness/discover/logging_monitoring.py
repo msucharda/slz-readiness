@@ -7,17 +7,23 @@ workspaces get a finding with empty ``observed_state.workspaces``, so the
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import Any, Optional
 
 from .az_common import AzError, az_cmd_str, error_finding, run_az
 
 
-def discover() -> list[dict[str, Any]]:
+def discover(
+    subscription_filter: Optional[set[str]] = None,
+) -> list[dict[str, Any]]:
     args = [
         "graph", "query", "--graph-query",
         "resources | where type =~ 'microsoft.operationalinsights/workspaces' "
         "| project name, id, resourceGroup, location, subscriptionId",
     ]
+    if subscription_filter:
+        # Scope the ARM graph call itself — cheaper and avoids cross-sub read
+        # attempts that would just error out as permission_denied.
+        args.extend(["--subscriptions", *sorted(subscription_filter)])
     try:
         result = run_az(args)
     except AzError as err:
