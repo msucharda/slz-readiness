@@ -74,6 +74,18 @@ Download `slz-readiness-vX.Y.Z.zip` from [Releases](./releases), unzip it somewh
 
 Every claim the plugin makes is backed by a rule YAML that cites a specific file in `data/baseline/` at a specific SHA. If the baseline file can't be resolved, CI fails. See [docs/anti-hallucination.md](./docs/anti-hallucination.md).
 
+## Releasing (maintainers)
+
+Version strings live in four files (`apm.yml`, `.github/plugin/plugin.json`, `scripts/slz_readiness/__init__.py`, `data/baseline/VERSIONS.json`). Use the release script — do not bump by hand:
+
+```bash
+python scripts/release.py 0.3.0 --changelog "short summary"
+```
+
+The script bumps all four files, commits, tags `vX.Y.Z`, and pushes. The `release.yml` workflow verifies that the tag matches every manifest version and refuses to publish on mismatch, then builds and attaches `slz-readiness-vX.Y.Z.zip` to the GitHub Release.
+
+Consumers install with `/plugin install msucharda/slz-readiness` inside the Copilot CLI (not `apm install` — APM expects a `.apm/` tree this plugin does not ship).
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).

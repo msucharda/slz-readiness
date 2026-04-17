@@ -12,6 +12,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify tag matches manifest versions
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          APM_V=$(grep -E '^version:' apm.yml | awk '{print $2}')
+          PJ_V=$(python -c "import json; print(json.load(open('.github/plugin/plugin.json'))['version'])")
+          INIT_V=$(python -c "import re; print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', open('scripts/slz_readiness/__init__.py').read()).group(1))")
+          VJ_V=$(python -c "import json; print(json.load(open('data/baseline/VERSIONS.json'))['plugin']['version'])")
+          echo "tag=$TAG apm.yml=$APM_V plugin.json=$PJ_V __init__.py=$INIT_V VERSIONS.json=$VJ_V"
+          for v in "$APM_V" "$PJ_V" "$INIT_V" "$VJ_V"; do
+            if [ "$v" != "$TAG" ]; then
+              echo "::error::version mismatch: tag=$TAG but found $v. Use scripts/release.py to bump." >&2
+              exit 1
+            fi
+          done
       - name: Build plugin zip
         run: |
           mkdir -p out/slz-readiness
