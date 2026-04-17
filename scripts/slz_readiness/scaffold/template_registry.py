@@ -54,3 +54,42 @@ ALLOWED_TEMPLATES = {
     "log-analytics",
     "role-assignment",
 }
+
+# ARM deployment scope for each template. Must stay in lockstep with the
+# ``targetScope`` line of each ``.bicep`` under scripts/scaffold/avm_templates/
+# — ARM rejects any mismatch between the template's targetScope and the
+# ``az deployment <scope>`` command the scaffold emits. The CLI layer reads
+# this map to pick the right ``az deployment mg|group|tenant`` verb and flag
+# set (``--location`` for mg/tenant, ``--resource-group`` for rg).
+TEMPLATE_SCOPES: dict[str, str] = {
+    "management-groups": "managementGroup",
+    "policy-assignment": "managementGroup",
+    "sovereignty-global-policies": "managementGroup",
+    "sovereignty-confidential-policies": "managementGroup",
+    "archetype-policies": "managementGroup",
+    "role-assignment": "managementGroup",
+    # Subscription-scope: the template creates its own resource group
+    # (`Microsoft.Resources/resourceGroups`) so operators don't have to
+    # pre-provision it on a fresh subscription. Deployed via
+    # `az deployment sub create --location <region>` — not `az deployment group`.
+    "log-analytics": "subscription",
+}
+
+# Runbooks emitted alongside Bicep for operators without tenant-scope deploy
+# rights. Each runbook keys off a Bicep template and is written to
+# ``out_dir/runbooks/<runbook>``. Follows the same allowlist discipline as
+# ALLOWED_TEMPLATES (rule 5 analogue): the scaffold engine refuses to emit
+# anything not in this map.
+#
+# Shape: ``template_stem -> list[runbook_filename]``. Every filename must
+# exist under ``scripts/scaffold/runbooks/``.
+TEMPLATE_RUNBOOKS: dict[str, list[str]] = {
+    "management-groups": [
+        "deploy-mg-hierarchy-lowpriv.ps1",
+        "deploy-mg-hierarchy-lowpriv.sh",
+    ],
+}
+
+ALLOWED_RUNBOOKS: set[str] = {
+    rb for rbs in TEMPLATE_RUNBOOKS.values() for rb in rbs
+}

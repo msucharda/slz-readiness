@@ -14,14 +14,19 @@
 
 targetScope = 'managementGroup'
 
-@description('Enforcement mode applied to the Global policy set.')
+@description('Enforcement mode applied to the Global policy set. Emergency off-switch only — use rolloutPhase for phased rollout.')
 @allowed(['Default', 'DoNotEnforce'])
 param enforcementMode string = 'Default'
+
+@description('Rollout phase for the Deny-class effects. "audit" = log non-compliance without blocking (Wave 1). "enforce" = actively Deny non-compliant writes (Wave 2). Default is audit; operators must opt into enforce after observing compliance data.')
+@allowed(['audit', 'enforce'])
+param rolloutPhase string = 'audit'
 
 @description('List of allowed Azure locations. Populated by scaffold from the SLZ baseline defaults; can be overridden.')
 param listOfAllowedLocations array
 
 var globalPolicySetId = '/providers/Microsoft.Authorization/policySetDefinitions/c1cbff38-87c0-4b9f-9f70-035c7a3b5523'
+var effectValue = rolloutPhase == 'enforce' ? 'Deny' : 'Audit'
 
 resource globalAssignment 'Microsoft.Authorization/policyAssignments@2024-04-01' = {
   name: 'Enforce-Sovereign-Global'
@@ -31,7 +36,7 @@ resource globalAssignment 'Microsoft.Authorization/policyAssignments@2024-04-01'
     definitionVersion: '1.*.*'
     enforcementMode: enforcementMode
     parameters: {
-      effect: { value: 'Deny' }
+      effect: { value: effectValue }
       listOfAllowedLocations: { value: listOfAllowedLocations }
     }
   }

@@ -34,10 +34,11 @@ from jsonschema import Draft202012Validator
 
 from .. import _trace
 from ..evaluate.loaders import BASELINE_DIR
-from .template_registry import ALLOWED_TEMPLATES, RULE_TO_TEMPLATE
+from .template_registry import ALLOWED_TEMPLATES, RULE_TO_TEMPLATE, TEMPLATE_RUNBOOKS
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATES_DIR = REPO_ROOT / "scripts" / "scaffold" / "avm_templates"
+RUNBOOKS_DIR = REPO_ROOT / "scripts" / "scaffold" / "runbooks"
 SCHEMAS_DIR = REPO_ROOT / "scripts" / "scaffold" / "param_schemas"
 
 # Which subtree a policy_assignment file lives under, keyed by the archetype's
@@ -314,7 +315,7 @@ def _emit(
         rollout_phase=params.get("rolloutPhase"),
     )
     # Use forward slashes for cross-platform consistency in manifests.
-    return {
+    result: dict[str, Any] = {
         "template": template,
         "scope": scope_hint or "tenant",
         "bicep": dst_bicep.relative_to(out_dir).as_posix(),
@@ -322,6 +323,31 @@ def _emit(
         "rule_ids": sorted(set(rule_ids)),
         "rollout_phase": params.get("rolloutPhase"),
     }
+
+    # Emit runbooks for operators who lack tenant-scope deploy RBAC. These are
+    # static artifacts the operator runs manually — the plugin never invokes
+    # them (rule 1: read-only Azure). Copied once per template emit; callers
+    # dedup if needed.
+    runbook_names = TEMPLATE_RUNBOOKS.get(template, [])
+    if runbook_names:
+        runbooks_out = out_dir / "runbooks"
+        runbooks_out.mkdir(exist_ok=True)
+        emitted_runbooks: list[str] = []
+        for rb_name in runbook_names:
+            src_rb = RUNBOOKS_DIR / rb_name
+            if not src_rb.exists():
+                raise ScaffoldError(f"Runbook file missing: {src_rb}")
+            dst_rb = runbooks_out / rb_name
+            shutil.copy2(src_rb, dst_rb)
+            emitted_runbooks.append(dst_rb.relative_to(out_dir).as_posix())
+            _trace.log(
+                "runbook.emit",
+                template=template,
+                runbook=rb_name,
+            )
+        result["runbooks"] = emitted_runbooks
+
+    return result
 
 
 def scaffold_for_gaps(

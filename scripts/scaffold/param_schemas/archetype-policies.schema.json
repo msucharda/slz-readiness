@@ -17,10 +17,14 @@
           "displayName": { "type": "string" },
           "policyDefinitionId": { "type": "string" },
           "enforcementMode": { "type": "string", "enum": ["Default", "DoNotEnforce"] },
-          "parameters": { "type": "object" }
+          "parameters": { "type": "object" },
+          "identityRequired": { "type": "boolean", "default": false },
+          "roleDefinitionIds": { "type": "array", "items": { "type": "string" }, "default": [] }
         }
       }
     },
-    "defaultEnforcementMode": { "type": "string", "enum": ["Default", "DoNotEnforce"], "default": "Default" }
+    "defaultEnforcementMode": { "type": "string", "enum": ["Default", "DoNotEnforce"], "default": "Default" },
+    "rolloutPhase": { "type": "string", "enum": ["audit", "enforce"], "default": "audit" },
+    "identityLocation": { "type": "string" }
   }
 }

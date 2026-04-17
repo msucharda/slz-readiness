@@ -57,7 +57,10 @@ jobs:
       - run: python -m slz_readiness.evaluate.rules_resolve
 
   whatif:
-    needs: [test]
+    # Intentionally NOT gated on `needs: [test]`: a Bicep compile failure is
+    # independent of Python test flakiness, and gating on tests is how BCP135
+    # shipped in v0.1.0 and stayed unnoticed for five releases. Run the
+    # scaffold-emitted Bicep through `bicep build` on every PR, unconditionally.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

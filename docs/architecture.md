@@ -25,6 +25,14 @@ Cloud Adoption Framework baseline.
 - **Scaffold** (`skills/scaffold`, `scripts/slz_readiness/scaffold/`) — fills
   the pinned AVM Bicep templates under `scripts/scaffold/avm_templates/`.
   Free-form Bicep is not possible — parameters validate against JSON schemas.
+  Policy templates ship in **Audit-first** mode: `rolloutPhase=audit` (default)
+  rewrites every baseline `Deny` effect to `Audit` at emit-time, producing a
+  Wave 1 deployment that records compliance without blocking writes. Operators
+  re-scaffold with `rolloutPhase=enforce` for Wave 2 after observing Azure
+  Policy state. Each run emits `how-to-deploy.md` with paired `what-if` +
+  `create` recipes in both PowerShell and Bash. Baseline JSON under
+  `data/baseline/alz-library/` is never mutated — the rewrite is a pure
+  transform in `engine._downshift_deny_to_audit`.
 
 ## Data contracts
 

@@ -320,8 +320,10 @@ def test_deploy_commands_are_scope_aware() -> None:
 
     Regression for slz-demo session 7a48b1d3: MG-scoped template was emitted
     with `az deployment mg` but the template declared `targetScope = 'tenant'`
-    (fixed to 'managementGroup'); RG-scoped log-analytics was emitted with
-    the same `az deployment mg` command, a latent scope mismatch.
+    (fixed to 'managementGroup'); subscription-scoped log-analytics was emitted
+    with the same `az deployment mg` command, a latent scope mismatch. In
+    v0.5.3 log-analytics flipped from resourceGroup to subscription scope
+    (the template creates its own RG), so `az deployment sub` is correct.
     """
     from slz_readiness.scaffold.cli import _deploy_commands
 
@@ -348,17 +350,20 @@ def test_deploy_commands_are_scope_aware() -> None:
     assert "az deployment mg what-if --management-group-id $mgId --location $location" in pwsh
     assert "az deployment mg create --management-group-id" in bash
 
-    # log-analytics -> resourceGroup scope: az deployment group + --resource-group
-    assert 'az deployment group what-if --resource-group "$RG_NAME"' in bash
-    assert "az deployment group what-if --resource-group $rgName" in pwsh
+    # log-analytics -> subscription scope: az deployment sub + --location
+    assert 'az deployment sub what-if --location "$LOCATION"' in bash
+    assert "az deployment sub what-if --location $location" in pwsh
+    assert "az deployment sub create --location" in bash
 
-    # Both shells declare the vars (including $rgName because RG template present).
+    # No resource-group template emitted, so RG_NAME / $rgName MUST NOT appear.
+    assert 'RG_NAME="<your-resource-group>"' not in bash
+    assert "$rgName" not in pwsh
+
+    # Both shells declare the MG / location vars.
     assert 'MG_ID="<your-mg-id>"' in bash
     assert 'LOCATION="<your-region>"' in bash
-    assert 'RG_NAME="<your-resource-group>"' in bash
     assert '$mgId = "<your-mg-id>"' in pwsh
     assert '$location = "<your-region>"' in pwsh
-    assert '$rgName = "<your-resource-group>"' in pwsh
 
 
 def test_deploy_commands_omit_rg_when_no_rg_template() -> None:
@@ -413,6 +418,125 @@ def test_trace_records_rollout_phase(tmp_path: Path) -> None:
     emits = [json.loads(line) for line in trace.splitlines() if '"template.emit"' in line]
     assert emits, "Expected at least one template.emit trace record"
     assert any(r.get("rollout_phase") == "audit" for r in emits)
+
+
+def test_log_analytics_template_scope_matches_registry() -> None:
+    """Regression for v0.5.3: template said 'subscription' but registry said
+    'resourceGroup', so the emitted deploy command invoked `az deployment group`
+    against a subscription-scoped Bicep -> ARM rejected the mismatch.
+    """
+    from slz_readiness.scaffold.template_registry import TEMPLATE_SCOPES
+
+    template_path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "scaffold"
+        / "avm_templates"
+        / "log-analytics.bicep"
+    )
+    text = template_path.read_text(encoding="utf-8")
+    assert "targetScope = 'subscription'" in text
+    assert TEMPLATE_SCOPES["log-analytics"] == "subscription"
+
+
+def test_management_groups_emit_produces_runbooks(tmp_path: Path) -> None:
+    """When management-groups is scaffolded, the low-priv runbooks are copied
+    alongside it. They are the HITL escape hatch for operators without
+    tenant-root RBAC (documented in how-to-deploy.md)."""
+    gaps = [_gap("mg.slz.hierarchy_shape")]
+    emitted, _ = scaffold_for_gaps(
+        gaps,
+        {"management-groups": {"parentManagementGroupId": "00000000-0000-0000-0000-000000000000"}},
+        tmp_path,
+    )
+    assert len(emitted) == 1
+    mg = emitted[0]
+    assert mg["template"] == "management-groups"
+    runbooks = mg.get("runbooks", [])
+    assert sorted(runbooks) == [
+        "runbooks/deploy-mg-hierarchy-lowpriv.ps1",
+        "runbooks/deploy-mg-hierarchy-lowpriv.sh",
+    ]
+    for rb in runbooks:
+        rb_path = tmp_path / rb
+        assert rb_path.exists(), f"Runbook not written: {rb_path}"
+        content = rb_path.read_text(encoding="utf-8")
+        # Each runbook must PUT MG resources directly — that is the whole point.
+        assert "Microsoft.Management/managementGroups" in content
+
+
+def test_how_to_deploy_includes_lowpriv_section_when_mg_emitted(tmp_path: Path) -> None:
+    """how-to-deploy.md must document the low-priv escape hatch whenever the
+    management-groups template is scaffolded."""
+    from slz_readiness.scaffold.cli import _write_how_to_deploy
+
+    emitted = [
+        {
+            "template": "management-groups",
+            "scope": "tenant",
+            "bicep": "bicep/management-groups.bicep",
+            "params": "params/management-groups.parameters.json",
+            "runbooks": [
+                "runbooks/deploy-mg-hierarchy-lowpriv.ps1",
+                "runbooks/deploy-mg-hierarchy-lowpriv.sh",
+            ],
+        }
+    ]
+    _write_how_to_deploy(out_dir=tmp_path, emitted=emitted)
+    how_to = (tmp_path / "how-to-deploy.md").read_text(encoding="utf-8")
+    assert "When you lack tenant-scope deploy rights" in how_to
+    assert "deploy-mg-hierarchy-lowpriv.ps1" in how_to
+    assert "deploy-mg-hierarchy-lowpriv.sh" in how_to
+    assert "AuthorizationFailed" in how_to
+
+
+def test_all_rule_to_template_emits_compile(tmp_path: Path) -> None:
+    """Synthesise a gap set covering every rule_id -> template mapping and
+    assert each emitted Bicep file exists and has expected structure.
+    Regression for BCP135 (v0.1.0..v0.5.2 shipped a non-compiling
+    management-groups.bicep unnoticed because CI only compiled the template
+    source, not emitted output).
+
+    We skip archetype-* rules here because they require vendored baseline
+    policy-assignment files already covered by dedicated archetype tests;
+    the goal here is breadth of *template coverage*, not matcher re-testing.
+    We also don't run `bicep build` inline — the dedicated whatif suite
+    (tests/whatif/) covers that when azure/setup-bicep is available.
+    """
+    from slz_readiness.scaffold.template_registry import RULE_TO_TEMPLATE
+
+    def _resource_id(rule_id: str) -> str:
+        if rule_id == "sovereignty.confidential_corp_policies_applied":
+            return "scope:mg/confidential_corp"
+        if rule_id == "sovereignty.confidential_online_policies_applied":
+            return "scope:mg/confidential_online"
+        return "tenant"
+
+    gaps = [
+        _gap(rid, _resource_id(rid))
+        for rid in sorted(RULE_TO_TEMPLATE)
+        if not rid.startswith("archetype.")
+    ]
+    params = {
+        "management-groups": {"parentManagementGroupId": "00000000-0000-0000-0000-000000000000"},
+        "sovereignty-global-policies": {"listOfAllowedLocations": ["westeurope"]},
+        "sovereignty-confidential-policies": {},
+        "log-analytics": {"workspaceName": "la-slz-mgmt", "location": "westeurope"},
+    }
+    emitted, _ = scaffold_for_gaps(gaps, params, tmp_path)
+    emitted_templates = {e["template"] for e in emitted}
+    # Every non-archetype template must emit.
+    expected = {
+        RULE_TO_TEMPLATE[rid] for rid in RULE_TO_TEMPLATE if not rid.startswith("archetype.")
+    }
+    assert expected.issubset(emitted_templates), (
+        f"Missing emits: {expected - emitted_templates}"
+    )
+    for e in emitted:
+        bicep_path = tmp_path / e["bicep"]
+        assert bicep_path.exists()
+        text = bicep_path.read_text(encoding="utf-8")
+        assert "targetScope" in text
 
 
 # ---------------------------------------------------------------------------

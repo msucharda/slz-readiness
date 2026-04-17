@@ -91,6 +91,9 @@ def _deploy_commands(emitted: list[dict[str, Any]]) -> dict[str, list[str]]:
         if scope == "resourceGroup":
             bash_head = 'az deployment group {verb} --resource-group "$RG_NAME"'
             pwsh_head = "az deployment group {verb} --resource-group $rgName"
+        elif scope == "subscription":
+            bash_head = 'az deployment sub {verb} --location "$LOCATION"'
+            pwsh_head = "az deployment sub {verb} --location $location"
         elif scope == "tenant":
             bash_head = 'az deployment tenant {verb} --location "$LOCATION"'
             pwsh_head = "az deployment tenant {verb} --location $location"
@@ -143,6 +146,12 @@ def _write_how_to_deploy(
         TEMPLATE_SCOPES.get(e.get("template", ""), "managementGroup") == "resourceGroup"
         for e in emitted
     )
+    mg_runbooks = [
+        rb
+        for e in emitted
+        if e.get("template") == "management-groups"
+        for rb in e.get("runbooks", []) or []
+    ]
 
     parts: list[str] = []
     parts.append(
@@ -376,6 +385,57 @@ def _write_how_to_deploy(
             "policy definition — look them up with `az policy set-definition "
             "show --name <policy-set-id>` and filter on each definition's "
             "`roleDefinitionIds` array."
+        )
+        parts.append("")
+    if mg_runbooks:
+        parts.append("## When you lack tenant-scope deploy rights")
+        parts.append("")
+        parts.append(
+            "ARM tenant-scope deployment (`az deployment tenant create`) "
+            "requires `Microsoft.Resources/deployments/whatIf/action` + "
+            "`.../write` at scope `/`. Enterprise principals (notably MCAPS / "
+            "Microsoft-internal accounts) frequently hold `Owner` only at the "
+            "tenant-root **management group**, not at `/`, so `whatIf` / "
+            "`create` returns `AuthorizationFailed` even though the downstream "
+            "`Microsoft.Management/managementGroups/write` calls would succeed."
+        )
+        parts.append("")
+        parts.append(
+            "If you see `AuthorizationFailed` on `az deployment tenant what-if` "
+            "for `management-groups.bicep`, run one of the emitted runbooks "
+            "instead. They PUT each MG resource directly at MG scope — this "
+            "only requires `Microsoft.Management/managementGroups/write` at "
+            "the **parent MG** (granted by `Management Group Contributor` or "
+            "`Owner` at MG scope):"
+        )
+        parts.append("")
+        for rb in mg_runbooks:
+            parts.append(f"- `{rb}`")
+        parts.append("")
+        parts.append("```powershell")
+        parts.append("# PowerShell — review the script first, then:")
+        parts.append(
+            "./runbooks/deploy-mg-hierarchy-lowpriv.ps1 `\n"
+            "    -TenantId <tenant-id> `\n"
+            "    -ParentManagementGroupId <tenant-root-mg-id> `\n"
+            "    -WhatIf    # drop -WhatIf to actually create"
+        )
+        parts.append("```")
+        parts.append("")
+        parts.append("```bash")
+        parts.append("# Bash")
+        parts.append(
+            "./runbooks/deploy-mg-hierarchy-lowpriv.sh \\\n"
+            "    --tenant-id <tenant-id> \\\n"
+            "    --parent-mg-id <tenant-root-mg-id> \\\n"
+            "    --whatif    # drop --whatif to actually create"
+        )
+        parts.append("```")
+        parts.append("")
+        parts.append(
+            "After the runbook succeeds, continue with `log-analytics` and the "
+            "policy templates normally — those deploy at subscription / MG "
+            "scope which your existing RBAC already covers."
         )
         parts.append("")
     parts.append("## See also")

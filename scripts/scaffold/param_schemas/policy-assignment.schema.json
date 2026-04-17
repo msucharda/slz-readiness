@@ -10,6 +10,8 @@
     "policyDefinitionId": { "type": "string", "pattern": "^/providers/Microsoft.Authorization/policy(Set)?Definitions/" },
     "enforcementMode": { "type": "string", "enum": ["Default", "DoNotEnforce"], "default": "Default" },
     "parameters": { "type": "object", "default": {} },
-    "nonComplianceMessages": { "type": "array", "default": [] }
+    "nonComplianceMessages": { "type": "array", "default": [] },
+    "identityRequired": { "type": "boolean", "default": false },
+    "identityLocation": { "type": "string" }
   }
 }

@@ -4,6 +4,7 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "enforcementMode": { "type": "string", "enum": ["Default", "DoNotEnforce"], "default": "Default" }
+    "enforcementMode": { "type": "string", "enum": ["Default", "DoNotEnforce"], "default": "Default" },
+    "rolloutPhase": { "type": "string", "enum": ["audit", "enforce"], "default": "audit" }
   }
 }

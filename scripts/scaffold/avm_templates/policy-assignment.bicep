@@ -27,8 +27,16 @@ param parameters object = {}
 @description('Optional non-compliance messages.')
 param nonComplianceMessages array = []
 
+@description('Set to true for DINE/Modify/Append/DeployIfNotExists policies that require a system-assigned identity for remediation. A companion role-assignment must grant the identity the role(s) declared in the policy definition roleDefinitionIds.')
+param identityRequired bool = false
+
+@description('Deployment location for the system-assigned identity. Ignored when identityRequired is false.')
+param identityLocation string = deployment().location
+
 resource assignment 'Microsoft.Authorization/policyAssignments@2024-04-01' = {
   name: assignmentName
+  location: identityRequired ? identityLocation : null
+  identity: identityRequired ? { type: 'SystemAssigned' } : { type: 'None' }
   properties: {
     displayName: displayName
     policyDefinitionId: policyDefinitionId
