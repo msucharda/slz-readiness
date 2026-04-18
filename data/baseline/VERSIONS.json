@@ -1,7 +1,7 @@
 {
   "plugin": {
     "version": "0.8.0",
-    "changelog": "v0.8.0 \u2014 brownfield-native scaffold (--rewrite-names) + rung-C/D matchers (policy_parameters_match, custom_initiative_equivalent) + heuristic reconcile proposer (--heuristic)"
+    "changelog": "v0.8.0 \u2014 Brownfield-native scaffold (--rewrite-names) + rung-C/D matchers (policy_parameters_match, custom_initiative_equivalent) + heuristic reconcile proposer (--heuristic)"
   },
   "_comment": "Baseline source: Azure-Landing-Zones-Library contains both ALZ and SLZ platform trees. Pinned to the latest main commit at implementation start (2026-04-16) and refreshed on a quarterly cadence. Every file in data/baseline/ must match its upstream SHA \u2014 verified by scripts/slz_readiness/evaluate/baseline_integrity.py.",
   "alz_library": {
