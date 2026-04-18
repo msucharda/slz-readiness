@@ -1,0 +1,29 @@
+rule_id: archetype.alz_platform_policy_parameters_match
+design_area: archetype
+severity: medium
+description: >-
+  Assigned policy parameters at the `platform` management group must match
+  the values declared in the vendored ALZ `platform` archetype's
+  per-assignment documents. Drift surfaces as `parameter_drift` (non-blocking).
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/alz/archetype_definitions/platform.alz_archetype_definition.json
+  sha: 1dc88512aee160a30d43f20eea7432ac65a63ae6
+matcher:
+  type: policy_parameters_match
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/platform
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/alz/archetype_definitions/platform.alz_archetype_definition.json
+    sha: 1dc88512aee160a30d43f20eea7432ac65a63ae6
+  ignore_parameters:
+    - listOfAllowedLocations
+    - effect
+expected: null
+message: >-
+  One or more ALZ `platform` policy assignments have parameter values that
+  differ from the vendored baseline. Review the drifted keys and confirm
+  each override is intentional.

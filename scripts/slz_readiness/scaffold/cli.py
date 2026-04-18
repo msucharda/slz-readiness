@@ -144,11 +144,16 @@ def _write_how_to_deploy(
     out_dir: Path,
     emitted: list[dict[str, Any]],
     run_dir: Path | None = None,
+    rewrite_names: bool = False,
 ) -> None:
     """Emit ``how-to-deploy.md`` with Wave-1/Wave-2 recipes in Bash + PowerShell.
 
     Required by operating instructions §5. The scaffold phase never runs the
     deployment — this file is the HITL hand-off to the human operator.
+
+    When ``rewrite_names=True`` and ``mg_alias.json`` is non-empty, the
+    emitted Bicep already carries tenant MG names; the alias table is
+    replaced with a short "apply-ready" note.
     """
     if not emitted:
         return
@@ -185,7 +190,24 @@ def _write_how_to_deploy(
     # ``MG_ID`` value to substitute per template scope so per-archetype
     # deployments hit the customer's actual MG, not the canonical SLZ name.
     alias_map = _load_alias_for_doc(run_dir)
-    if alias_map:
+    if alias_map and rewrite_names:
+        parts.append("## Brownfield retargeting (applied — apply-ready Bicep)")
+        parts.append("")
+        parts.append(
+            "`slz-scaffold --rewrite-names` was used, so the emitted Bicep "
+            "already carries your tenant's MG names — no manual substitution "
+            "required. Use the tenant MG names directly when filling "
+            "`MG_ID` below."
+        )
+        parts.append("")
+        parts.append(
+            _summary.render_table(
+                ["Canonical role", "Your MG name (now in Bicep)"],
+                [[k, v] for k, v in sorted(alias_map.items())],
+            )
+        )
+        parts.append("")
+    elif alias_map:
         parts.append("## Brownfield retargeting (mg_alias.json)")
         parts.append("")
         parts.append(
@@ -668,7 +690,21 @@ def _write_run_rollup(out_dir: Path) -> None:
     help="JSON file: { '<template-stem>': { param: value, ... }, ... }",
 )
 @click.option("--out", "out_dir", required=True, type=click.Path(path_type=Path))
-def main(gaps_path: Path, params_path: Path, out_dir: Path) -> None:
+@click.option(
+    "--rewrite-names",
+    is_flag=True,
+    default=False,
+    help=(
+        "v0.8.0: rewrite canonical SLZ MG role names to your tenant's names "
+        "inside emitted Bicep (requires a non-empty mg_alias.json in the "
+        "gaps-file directory). Default OFF — emits canonical names + alias "
+        "substitution table in how-to-deploy.md, preserving v0.7.x "
+        "behaviour. Turn ON for apply-ready Bicep in brownfield tenants."
+    ),
+)
+def main(
+    gaps_path: Path, params_path: Path, out_dir: Path, rewrite_names: bool
+) -> None:
     gaps_doc = json.loads(gaps_path.read_text(encoding="utf-8"))
     gaps = gaps_doc.get("gaps", gaps_doc) if isinstance(gaps_doc, dict) else gaps_doc
     params_by_template = json.loads(params_path.read_text(encoding="utf-8"))
@@ -678,10 +714,16 @@ def main(gaps_path: Path, params_path: Path, out_dir: Path) -> None:
     # when gaps is supplied from elsewhere.
     run_dir = gaps_path.parent
     with _trace.tracer(out_dir, phase="scaffold"):
-        _trace.log("scaffold.begin", gap_count=len(gaps))
+        _trace.log(
+            "scaffold.begin", gap_count=len(gaps), rewrite_names=rewrite_names
+        )
         try:
             emitted, warnings = scaffold_for_gaps(
-                gaps, params_by_template, out_dir, run_dir=run_dir
+                gaps,
+                params_by_template,
+                out_dir,
+                run_dir=run_dir,
+                rewrite_names=rewrite_names,
             )
         except ScaffoldError as exc:
             click.echo(f"SCAFFOLD ERROR: {exc}", err=True)
@@ -692,7 +734,12 @@ def main(gaps_path: Path, params_path: Path, out_dir: Path) -> None:
             encoding="utf-8",
         )
         _write_scaffold_summary(out_dir=out_dir, gaps=gaps, emitted=emitted, warnings=warnings)
-        _write_how_to_deploy(out_dir=out_dir, emitted=emitted, run_dir=run_dir)
+        _write_how_to_deploy(
+            out_dir=out_dir,
+            emitted=emitted,
+            run_dir=run_dir,
+            rewrite_names=rewrite_names,
+        )
         _write_run_rollup(out_dir)
     click.echo(f"Emitted {len(emitted)} templates -> {out_dir}")
     if warnings:

@@ -72,36 +72,65 @@ def _write_alias(out: Path, alias: dict[str, str | None]) -> None:
     required=False,
     help="Brownfield only: accepted-mapping proposal JSON written by the /slz-reconcile prompt.",
 )
+@click.option(
+    "--heuristic",
+    is_flag=True,
+    default=False,
+    help=(
+        "Brownfield only: build a proposal from a substring-matching "
+        "heuristic instead of requiring --proposal. Fast path for tenants "
+        "whose MG names are close to canonical (corp-mg, Management, etc.). "
+        "Review output before accepting — roles the heuristic is unsure "
+        "about are emitted as null and must be resolved manually."
+    ),
+)
 def main(
     mode: str,
     findings_path: Path,
     out_path: Path,
     proposal_path: Path | None,
+    heuristic: bool,
 ) -> None:
     run_dir = out_path.parent
     with _trace.tracer(run_dir, phase="reconcile"):
-        _trace.log("reconcile.begin", mode=mode)
+        _trace.log("reconcile.begin", mode=mode, heuristic=heuristic)
 
         findings = _load_json(findings_path)
 
         if mode == "greenfield":
-            if proposal_path is not None:
+            if proposal_path is not None or heuristic:
                 click.echo(
-                    "--proposal is only valid with --mode brownfield",
+                    "--proposal / --heuristic are only valid with --mode brownfield",
                     err=True,
                 )
                 sys.exit(2)
             alias = empty_alias()
             _trace.log("reconcile.greenfield.shortcircuit", roles=len(CANONICAL_ROLES))
         else:
-            if proposal_path is None:
+            if proposal_path is None and not heuristic:
                 click.echo(
-                    "--mode brownfield requires --proposal "
-                    "(emit it from the /slz-reconcile prompt)",
+                    "--mode brownfield requires --proposal or --heuristic "
+                    "(emit a proposal from the /slz-reconcile prompt, or use "
+                    "the heuristic proposer for tenants with close-to-canonical names)",
                     err=True,
                 )
                 sys.exit(2)
-            raw = _load_json(proposal_path)
+            if proposal_path is not None and heuristic:
+                click.echo(
+                    "--proposal and --heuristic are mutually exclusive",
+                    err=True,
+                )
+                sys.exit(2)
+            if heuristic:
+                from .proposer import build_heuristic_proposal
+                raw = build_heuristic_proposal(findings)
+                _trace.log(
+                    "reconcile.heuristic.proposed",
+                    mapped=sum(1 for v in raw.values() if v is not None),
+                )
+            else:
+                assert proposal_path is not None  # guarded by the mutual-exclusion checks above
+                raw = _load_json(proposal_path)
             try:
                 alias = validate(raw, findings=findings)
             except AliasSchemaError as exc:
@@ -111,6 +140,7 @@ def main(
             _trace.log(
                 "reconcile.brownfield.accepted",
                 mapped=sum(1 for v in alias.values() if v is not None),
+                source="heuristic" if heuristic else "proposal",
             )
 
         _write_alias(out_path, alias)

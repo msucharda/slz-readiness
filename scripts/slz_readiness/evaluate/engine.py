@@ -20,7 +20,7 @@ from typing import Any
 
 from .. import _summary, _trace
 from .loaders import Rule, load_all_rules
-from .matchers import get_matcher
+from .matchers import _unpack_matcher_result, get_matcher
 from .models import Gap
 
 _ALIAS_FILE = "mg_alias.json"
@@ -168,15 +168,18 @@ def evaluate(
                 if observed_list and all(isinstance(x, list) for x in observed_list):
                     observed = [x for sub in observed_list for x in sub]
             matcher_fn = get_matcher(rule.matcher["type"])
-            passed, snapshot = matcher_fn(observed, expected, rule.matcher)
+            passed, snapshot, status_override = _unpack_matcher_result(
+                matcher_fn(observed, expected, rule.matcher)
+            )
+            status = ("compliant" if passed else (status_override or "missing"))
             _trace.log(
                 "rule.fire",
                 rule_id=rule.rule_id,
                 resource_id="tenant",
                 passed=passed,
-                status=("compliant" if passed else "missing"),
+                status=status,
             )
-            _tally_bump(tally_out, passed=passed, status=("compliant" if passed else "missing"))
+            _tally_bump(tally_out, passed=passed, status=status)
             if not passed:
                 gaps.append(
                     Gap(
@@ -189,7 +192,7 @@ def evaluate(
                         resource_id="tenant",
                         message=rule.message,
                         remediation_template=rule.remediation_template,
-                        status="missing",
+                        status=status,
                     )
                 )
             continue
@@ -197,15 +200,18 @@ def evaluate(
         # Per-resource rules produce one gap per non-compliant resource.
         for f in sorted(target_findings, key=lambda f: f.get("resource_id", "")):
             matcher_fn = get_matcher(rule.matcher["type"])
-            passed, snapshot = matcher_fn(f.get("observed_state"), expected, rule.matcher)
+            passed, snapshot, status_override = _unpack_matcher_result(
+                matcher_fn(f.get("observed_state"), expected, rule.matcher)
+            )
+            status = ("compliant" if passed else (status_override or "missing"))
             _trace.log(
                 "rule.fire",
                 rule_id=rule.rule_id,
                 resource_id=f.get("resource_id", ""),
                 passed=passed,
-                status=("compliant" if passed else "missing"),
+                status=status,
             )
-            _tally_bump(tally_out, passed=passed, status=("compliant" if passed else "missing"))
+            _tally_bump(tally_out, passed=passed, status=status)
             if not passed:
                 gaps.append(
                     Gap(
@@ -218,7 +224,7 @@ def evaluate(
                         resource_id=f.get("resource_id", ""),
                         message=rule.message,
                         remediation_template=rule.remediation_template,
-                        status="missing",
+                        status=status,
                     )
                 )
 

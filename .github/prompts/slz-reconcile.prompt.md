@@ -39,6 +39,34 @@ Proceed to step 3.
 
 If `mode == "brownfield"`:
 
+### Optional fast path: heuristic pre-fill
+
+Before the per-role loop, call `ask_user`:
+
+- Field: `use_heuristic`
+- Type: `boolean`
+- Title: **"Try a heuristic proposal first?"**
+- Default: `true`
+- Message: "The heuristic substring-matches your MG names (`corp-mg`,
+  `Management`, `Sandbox`, etc.) against canonical SLZ roles. Unsure
+  roles come back as `null` and you confirm them manually. Skip the
+  heuristic if your MGs use opaque names."
+
+If `use_heuristic == true`, run:
+
+```bash
+slz-reconcile --mode brownfield --heuristic \
+  --findings artifacts/<run>/findings.json \
+  --out artifacts/<run>/mg_alias.json
+```
+
+If the CLI accepts, render the resulting alias map to the operator
+via `ask_user` with a boolean `accept` field titled **"Accept the
+heuristic mapping?"**. On rejection, fall through to the per-role
+loop below. On acceptance, proceed to step 3.
+
+### Per-role proposal loop
+
 For each of the 14 canonical SLZ roles (iterate in stable order —
 alphabetic by role name — for deterministic operator experience):
 

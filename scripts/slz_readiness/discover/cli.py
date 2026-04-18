@@ -12,6 +12,7 @@ import click
 from .. import _summary, _trace
 from . import (
     _progress,
+    custom_initiatives,
     identity_rbac,
     logging_monitoring,
     mg_hierarchy,
@@ -25,6 +26,7 @@ DISCOVERERS = [
     mg_hierarchy,
     subscription_inventory,
     policy_assignments,
+    custom_initiatives,
     identity_rbac,
     logging_monitoring,
     sovereignty_controls,

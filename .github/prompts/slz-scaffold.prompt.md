@@ -9,6 +9,21 @@ Invoke the **slz-scaffold** skill. Only templates under
 from the user via `ask_user` (never plain text), write them to
 `artifacts/<run>/scaffold.params.json`, then run `slz-scaffold`.
 
+## Brownfield rewrite gate (v0.8.0)
+
+Before invoking the CLI, if `artifacts/<run>/mg_alias.json` exists and
+has any non-null values, call `ask_user` with a boolean field asking:
+
+> _"Rewrite canonical SLZ MG names to your tenant's actual MG names
+> inside the emitted Bicep? YES → apply-ready Bicep for this tenant
+> (no manual substitution needed before `az deployment`). NO → emit
+> canonical names and a substitution table in `how-to-deploy.md`
+> (useful for cross-tenant reuse)."_
+
+Default YES when `mg_alias.json` has non-null entries. Pass
+`--rewrite-names` to `slz-scaffold` when the user accepts. When no
+alias map exists, do not ask — the flag is a no-op.
+
 The CLI writes `scaffold.summary.{md,json}` containing the emitted-template
 table, warnings, "gaps NOT scaffolded" section, and the per-template
 `az deployment mg what-if` / `create` commands.

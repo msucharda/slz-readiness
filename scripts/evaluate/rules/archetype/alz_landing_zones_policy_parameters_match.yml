@@ -1,0 +1,29 @@
+rule_id: archetype.alz_landing_zones_policy_parameters_match
+design_area: archetype
+severity: medium
+description: >-
+  Assigned policy parameters at the `landingzones` management group must match
+  the values declared in the vendored ALZ `landing_zones` archetype's
+  per-assignment documents. Drift surfaces as `parameter_drift` (non-blocking).
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
+  path: platform/alz/archetype_definitions/landing_zones.alz_archetype_definition.json
+  sha: 306fbad10243bf92789d9f88f9e89529882f62aa
+matcher:
+  type: policy_parameters_match
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/landingzones
+  aggregate: tenant
+  archetype_ref:
+    source: https://github.com/Azure/Azure-Landing-Zones-Library
+    path: platform/alz/archetype_definitions/landing_zones.alz_archetype_definition.json
+    sha: 306fbad10243bf92789d9f88f9e89529882f62aa
+  ignore_parameters:
+    - listOfAllowedLocations
+    - effect
+expected: null
+message: >-
+  One or more ALZ `landing_zones` policy assignments have parameter values
+  that differ from the vendored baseline. Review the drifted keys and
+  confirm each override is intentional.
