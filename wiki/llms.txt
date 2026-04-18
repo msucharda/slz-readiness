@@ -1,0 +1,40 @@
+# llms.txt
+
+> LLM-readable index for the slz-readiness wiki. Source repo: [msucharda/slz-readiness](https://github.com/msucharda/slz-readiness). Version: 0.4.0.
+
+## Onboarding
+
+- [Contributor Guide](/onboarding/contributor): Environment setup, first task, debugging, testing.
+- [Staff Engineer Guide](/onboarding/staff-engineer): Philosophy, decision log, failure modes.
+- [Executive Guide](/onboarding/executive): Capabilities, risks, investment thesis.
+- [Product Manager Guide](/onboarding/product-manager): User journeys, limitations, FAQ.
+
+## Getting started
+
+- [Overview](/getting-started/overview): What slz-readiness is.
+- [Installation](/getting-started/installation): Plugin install + Azure prerequisites.
+- [Quick Start](/getting-started/quick-start): First audit end-to-end.
+- [Artifacts](/getting-started/artifacts): findings.json, gaps.json, plan.md, bicep/.
+
+## Deep dive
+
+- [Architecture](/deep-dive/architecture): 4-phase pipeline, data contracts.
+- [Plugin Mechanics](/deep-dive/plugin-mechanics): apm.yml, skills, prompts.
+- [Hooks](/deep-dive/hooks): Pre/post tool-use guards.
+- [Discover: CLI & Scope](/deep-dive/discover/cli-and-scope)
+- [Discover: Discoverers](/deep-dive/discover/discoverers)
+- [Discover: az Wrapper](/deep-dive/discover/az-wrapper)
+- [Evaluate: Rule Engine](/deep-dive/evaluate/rule-engine)
+- [Evaluate: Matchers](/deep-dive/evaluate/matchers)
+- [Evaluate: Rules Catalog](/deep-dive/evaluate/rules-catalog)
+- [Evaluate: Baseline Vendoring](/deep-dive/evaluate/baseline-vendoring)
+- [Plan](/deep-dive/plan)
+- [Scaffold: Engine & Registry](/deep-dive/scaffold/engine-and-registry)
+- [Scaffold: AVM Templates](/deep-dive/scaffold/avm-templates)
+- [Orchestration](/deep-dive/orchestration)
+- [Release Process](/deep-dive/release-process)
+- [Testing](/deep-dive/testing)
+
+## Optional
+
+- [Full wiki text](/llms-full.txt): All pages concatenated.

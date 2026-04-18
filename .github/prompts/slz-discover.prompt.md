@@ -108,3 +108,27 @@ asks whether to continue to Evaluate, the follow-up `ask_user` gate's
    and may exceed what renders cleanly in a form).
 
 Do not interpret the findings yourself — hand off to `/slz-evaluate`.
+
+## 8. Brownfield advisory — include in the next-phase gate `message`
+
+**If the discovered tenant clearly already operates a landing zone**
+(e.g. `present_ids` contains MGs that are not the SLZ canonical names
+but look like production/platform/hub/spoke), append the following
+paragraph to the next `ask_user` gate's `message` field so the
+operator is forewarned:
+
+> ⚠ **Brownfield advisory.** This tenant appears to already operate a
+> landing zone under non-canonical MG names. Run `/slz-reconcile` next
+> to map the canonical SLZ roles (corp, online, platform, …) to your
+> tenant's actual MG names. Discover and Evaluate both consume the
+> resulting `mg_alias.json` to retarget probes and selectors against
+> your real MGs. Scaffold surfaces the same alias mapping as a
+> substitution table in `how-to-deploy.md` — the emitted `.bicep`
+> files keep canonical role names so they stay reusable across
+> tenants; you (or your pipeline) substitute `MG_ID` per template at
+> deploy time. See `docs/brownfield.md` for the full retargeting
+> workflow and the v0.8.0 roadmap for in-place Bicep rewriting.
+
+Do not suppress gaps on the basis of this advisory — the evaluator
+still runs as normal. The advisory exists so the operator reads the
+gap list in the right light.

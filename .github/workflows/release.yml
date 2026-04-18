@@ -26,6 +26,31 @@ jobs:
               exit 1
             fi
           done
+      - name: Reject hollow release (gap-report finding #1)
+        # v0.7.0 went out hollow: the release commit only changed the four
+        # version-string files, while the actual source changes sat
+        # uncommitted on a developer's laptop. Guard against repeats by
+        # requiring source changes between this tag and the previous tag.
+        run: |
+          git fetch --tags --depth=50 origin || true
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${GITHUB_REF_NAME}$" | head -n1 || true)
+          if [ -z "$PREV_TAG" ]; then
+            echo "no prior tag — skipping hollow-release guard (initial release)"
+            exit 0
+          fi
+          echo "comparing $PREV_TAG..${GITHUB_REF_NAME}"
+          CHANGED=$(git diff --name-only "$PREV_TAG..${GITHUB_REF_NAME}" | sort -u)
+          echo "files changed since $PREV_TAG:"
+          echo "$CHANGED"
+          # Real source paths — exclude the four version-string files and docs/wiki.
+          SOURCE_CHANGED=$(echo "$CHANGED" | grep -E '^(scripts/|hooks/|\.github/(agents|skills|prompts|extensions|workflows)/|tests/)' | grep -v -E '(^scripts/slz_readiness/__init__\.py|^data/baseline/VERSIONS\.json)$' || true)
+          if [ -z "$SOURCE_CHANGED" ]; then
+            echo "::error::Hollow release detected: no source files changed since $PREV_TAG."
+            echo "::error::Either real changes were never committed, or this tag should not exist."
+            exit 1
+          fi
+          COUNT=$(echo "$SOURCE_CHANGED" | wc -l)
+          echo "source-diff guard PASS: $COUNT source file(s) changed since $PREV_TAG"
       - name: Build plugin zip
         run: |
           mkdir -p out/slz-readiness
