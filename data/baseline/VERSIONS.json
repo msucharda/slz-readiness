@@ -1,7 +1,7 @@
 {
   "plugin": {
-    "version": "0.7.0",
-    "changelog": "v0.7.0 \u2014 Brownfield parity: Discover MG-union probe, Evaluate def-id fallback, Scaffold alias surfacing, post-hook alias guard"
+    "version": "0.7.1",
+    "changelog": "v0.7.1 \u2014 brownfield parity + post-release hardening + hollow-tag guard"
   },
   "_comment": "Baseline source: Azure-Landing-Zones-Library contains both ALZ and SLZ platform trees. Pinned to the latest main commit at implementation start (2026-04-16) and refreshed on a quarterly cadence. Every file in data/baseline/ must match its upstream SHA \u2014 verified by scripts/slz_readiness/evaluate/baseline_integrity.py.",
   "alz_library": {
