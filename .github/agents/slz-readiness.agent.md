@@ -47,6 +47,13 @@ scope confirmation — MUST be implemented by calling the `ask_user` tool.
 Plain-text yes/no questions are forbidden.** Use a structured boolean or
 enum schema so the operator sees a form, not free prose.
 
+**Every `ask_user` gate MUST also include a bounded excerpt of the upstream
+phase's `<phase>.summary.md` in the form's `message` field, plus the path
+to the full file on disk.** This is defense-in-depth — the concrete
+per-phase prompts and `SKILL.md` files specify the exact excerpt content
+for each gate; this rule backstops them so a new phase added later
+doesn't silently skip the stats relay.
+
 ## Hard rules
 
 See `instructions/INSTRUCTIONS.md`. TL;DR: read-only, vendored baseline is

@@ -21,31 +21,41 @@ Produce `artifacts/<run>/findings.json` for the current tenant.
 
 ## Procedure
 
-### 1. Confirm scope with the user (MANDATORY — do not skip)
+### 1. Confirm scope with the user via `ask_user` (MANDATORY — do not skip, do not use plain text)
 
-Before any discovery runs, the agent **must** interactively confirm:
+Every question below MUST be asked via the `ask_user` tool with a structured
+schema (enum or boolean). Plain-text prompts are forbidden — they
+bypass the structured-confirmation UX and caused a prior regression.
 
-1. **Tenant**: exactly one Azure tenant id. Enumerate the tenants visible
-   to the user (shell):
+1. **Tenant enumeration** (shell):
    ```bash
-   az account list --query "[].{tenantId:tenantId, subName:name}" -o json
+   az account list --query "[].{tenantId:tenantId, subscriptionId:id, subscriptionName:name}" -o json
    ```
-   Group by `tenantId`, print a numbered list, and ask which tenant to target.
-   Do **not** assume the currently-active tenant — a user may have multiple
-   tenant memberships and want to target a non-default one.
+   Group by `tenantId`. The subscription `name` field is a subscription
+   name, not a tenant display name — do NOT use it to label tenants.
 
-2. **Subscription scope**: the user picks **one** of:
-   - A specific set of subscription ids (one or many), *or*
-   - All subscriptions in the tenant.
+2. **Tenant pick** — `ask_user` with field `tenant_id`, enum of raw
+   `tenantId` GUIDs, labels `"<tenantId> — <N> subscriptions"`. Title:
+   **"Which Azure tenant should Discover target?"**. Do NOT assume the
+   currently-active tenant.
 
-   Default recommendation is **all**, but the user must confirm it explicitly.
-   The CLI refuses to fan out without an explicit `--all-subscriptions` flag.
+3. **Scope mode** — `ask_user` with field `scope_mode`, enum
+   `"all"` / `"specific"`. Title: **"Which subscription scope?"**.
+   Default `"all"` but the operator must confirm explicitly. The CLI
+   refuses to fan out without an explicit `--all-subscriptions` flag.
 
-3. **Tenant login**: if the chosen tenant ≠ the active `az account show`
-   tenant, ask the user to run `az login --tenant <id>` in their shell. The
-   pre-tool-use hook does not currently allow `az login` to be run by the
-   agent; the user runs it manually. Wait for them to confirm before
-   proceeding.
+4. **If `scope_mode == "specific"`, loop**: `ask_user` enum
+   `next_subscription` drawn from the chosen tenant's remaining subs,
+   then `ask_user` boolean `add_another` (default `false`). Accumulate
+   ids — each becomes a repeated `--subscription <id>` flag. This keeps
+   the documented "one or many" behaviour that the CLI's repeatable
+   flag already supports.
+
+5. **Tenant login mismatch** — if the chosen tenant ≠ the active
+   `az account show` tenant, `ask_user` boolean `acknowledged`, title
+   **"Run `az login --tenant <id>` in your own shell, then acknowledge
+   to continue."** The pre-tool-use hook forbids the agent from running
+   `az login`; the operator does it manually.
 
 ### 2. Create the run directory
 `artifacts/<run>/` where `<run>` is a UTC timestamp.
@@ -68,12 +78,22 @@ The CLI **validates** that:
 ### 4. Do **not** modify any resource.
 All internal commands use `list` / `show` / `graph query` only.
 
-### 5. Print a one-line summary
-Number of findings and the output path (the CLI does this already). The CLI
-also writes `artifacts/<run>/discover.summary.{json,md}` — a human-readable
-per-module status table plus "top observations" and caveats. **Read
-`discover.summary.md` and relay it verbatim** to the user before handing off
-to evaluate; do not re-derive the numbers.
+### 5. Relay the Discover summary into the next `ask_user` gate
+The CLI prints a one-line summary (findings count + output path) and writes
+`artifacts/<run>/discover.summary.{json,md}` — a human-readable per-module
+status table plus "top observations" and caveats.
+
+Do **not** repeat the summary as a plain-text assistant message. When the
+next `ask_user` gate fires (either via `/slz-run`'s phase-gate or the
+operator asking what comes next), include in the form's `message` field:
+
+1. A bounded excerpt from `discover.summary.md` — header line, per-module
+   status table, and top-observations block. Keep it under ~40 lines so
+   the form renders cleanly; do NOT include the full file verbatim.
+2. The path `artifacts/<run>/discover.summary.md` so the operator can
+   open the complete document outside the form.
+
+Do not re-derive the numbers yourself.
 
 ## Scope metadata
 

@@ -24,8 +24,13 @@ Produce `artifacts/<run>/gaps.json`.
    (or the portable form: `python -m slz_readiness.evaluate.cli --findings … --out …`)
 2. The CLI also writes `evaluate.summary.{json,md}` next to `gaps.json` with
    totals, by-severity, by-design-area, compliance ratio (passed/failed/unknown)
-   and the top largest gaps. **Read `evaluate.summary.md` and relay it
-   verbatim** — do NOT re-derive the numbers yourself.
+   and the top largest gaps.
+
+   When the next `ask_user` gate fires, include in the form's `message`
+   field a bounded excerpt from `evaluate.summary.md` (header, severity
+   tally, compliance ratio, top 5 gaps — under ~30 lines) plus the path
+   `artifacts/<run>/evaluate.summary.md` for the full file. Do NOT
+   relay the summary as plain text and do NOT re-derive totals.
 3. If zero gaps, tell the user they are compliant against the vendored baseline
    and suggest re-running after the next baseline refresh.
 
