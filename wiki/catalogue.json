@@ -1,0 +1,176 @@
+{
+  "project": {
+    "name": "slz-readiness",
+    "version": "0.5.1",
+    "repo": "https://github.com/msucharda/slz-readiness",
+    "branch": "main",
+    "description": "4-phase Sovereign Landing Zone readiness audit tool for Azure tenants. Copilot CLI plugin.",
+    "tech_stack": ["Python 3.11+", "Click", "PyYAML", "jsonschema", "Bicep", "AVM", "Azure CLI", "GitHub Copilot CLI"]
+  },
+  "modules": [
+    {
+      "id": "getting-started",
+      "title": "Getting Started",
+      "collapsed": false,
+      "children": [
+        {
+          "id": "overview",
+          "title": "Overview",
+          "path": "getting-started/overview.md",
+          "prompt": "Explain what slz-readiness is and the 4-phase pipeline. Reference README.md:1-92 and docs/architecture.md:1-54."
+        },
+        {
+          "id": "installation",
+          "title": "Installation",
+          "path": "getting-started/installation.md",
+          "prompt": "Install via /plugin install inside Copilot CLI, plus dev clone via pip install -e. Cite README.md:20-62, apm.yml:1-52, .github/plugin/plugin.json:1-63."
+        },
+        {
+          "id": "quick-start",
+          "title": "Quick Start",
+          "path": "getting-started/quick-start.md",
+          "prompt": "Walk the five slash commands with expected outputs. Cite .github/prompts/*.prompt.md and .github/skills/*/SKILL.md."
+        },
+        {
+          "id": "artifacts",
+          "title": "Artifacts & Outputs",
+          "path": "getting-started/artifacts.md",
+          "prompt": "findings.json, gaps.json, plan.md, bicep/*.bicep, scaffold.manifest.json, trace.jsonl. Cite engine.py, discover/cli.py, scaffold/engine.py."
+        }
+      ]
+    },
+    {
+      "id": "deep-dive",
+      "title": "Deep Dive",
+      "collapsed": false,
+      "children": [
+        {
+          "id": "architecture",
+          "title": "Architecture Overview",
+          "path": "deep-dive/architecture.md",
+          "prompt": "4 phases, data contracts, anti-hallucination contract. Cite docs/architecture.md, docs/anti-hallucination.md, scripts/slz_readiness/evaluate/models.py."
+        },
+        {
+          "id": "plugin-mechanics",
+          "title": "Plugin Mechanics",
+          "path": "deep-dive/plugin-mechanics.md",
+          "prompt": "apm.yml, plugin.json, agent definition, skills, prompts, MCP servers. Cite apm.yml, .github/plugin/plugin.json, .github/agents/slz-readiness.agent.md."
+        },
+        {
+          "id": "hooks",
+          "title": "Hooks: Pre- and Post-Tool-Use",
+          "path": "deep-dive/hooks.md",
+          "prompt": "pre_tool_use.py verb allowlist; post_tool_use.py citation guard. Cite hooks/pre_tool_use.py:1-85, hooks/post_tool_use.py:1-89, tests/test_hooks.py."
+        },
+        {
+          "id": "phase-summaries",
+          "title": "Phase Summaries (v0.5.0)",
+          "path": "deep-dive/phase-summaries.md",
+          "prompt": "Deterministic per-phase summaries + run.summary.md roll-up. Cite scripts/slz_readiness/_summary.py, plan/summary_cli.py, scaffold/cli.py:_write_run_rollup, tests/test_hooks.py::test_plan_summary_not_filtered."
+        },
+        {
+          "id": "phased-rollout",
+          "title": "Phased Rollout & Scope-Aware Deployment (v0.5.1)",
+          "path": "deep-dive/phased-rollout.md",
+          "prompt": "MG template scope fix, TEMPLATE_SCOPES, scope-aware az deployment commands, Audit->Enforce rollout, DINE identity propagation, how-to-deploy.md. Cite scripts/scaffold/avm_templates/management-groups.bicep, scripts/slz_readiness/scaffold/template_registry.py, scripts/slz_readiness/scaffold/engine.py, scripts/slz_readiness/scaffold/cli.py, scripts/scaffold/param_schemas/*.schema.json."
+        },
+        {
+          "id": "discover",
+          "title": "Phase 1: Discover",
+          "children": [
+            {
+              "id": "discover-cli",
+              "title": "CLI & Scope Enforcement",
+              "path": "deep-dive/discover/cli-and-scope.md",
+              "prompt": "Discover CLI — tenant+subscription scope, Click entry, run_scope. Cite discover/cli.py:88-227, .github/skills/discover/SKILL.md."
+            },
+            {
+              "id": "discoverers",
+              "title": "Discoverers (6 modules)",
+              "path": "deep-dive/discover/discoverers.md",
+              "prompt": "mg_hierarchy, subscription_inventory, policy_assignments, identity_rbac, logging_monitoring, sovereignty_controls. Cite discover/*.py."
+            },
+            {
+              "id": "az-wrapper",
+              "title": "Azure CLI Wrapper & Error Classification",
+              "path": "deep-dive/discover/az-wrapper.md",
+              "prompt": "run_az, AzError, tree-kill timeouts, _progress, _trace. Cite discover/az_common.py, discover/_progress.py, _trace.py."
+            }
+          ]
+        },
+        {
+          "id": "evaluate",
+          "title": "Phase 2: Evaluate",
+          "children": [
+            {
+              "id": "rule-engine",
+              "title": "Deterministic Rule Engine",
+              "path": "deep-dive/evaluate/rule-engine.md",
+              "prompt": "engine.py selector, aggregate=tenant, unknown-gap path, sort determinism. Cite evaluate/engine.py:1-169, evaluate/cli.py, evaluate/models.py."
+            },
+            {
+              "id": "matchers",
+              "title": "Matchers",
+              "path": "deep-dive/evaluate/matchers.md",
+              "prompt": "equals, contains_all, policy_assignments_include, archetype_policies_applied, any_subscription_has_workspace. Cite evaluate/matchers.py:1-111."
+            },
+            {
+              "id": "rules-catalog",
+              "title": "Rules Catalogue",
+              "path": "deep-dive/evaluate/rules-catalog.md",
+              "prompt": "Walk every YAML under scripts/evaluate/rules/. Table of rule_id, design_area, severity, matcher, baseline path, template. Cite each rule YAML."
+            },
+            {
+              "id": "baseline",
+              "title": "Baseline Vendoring & Integrity",
+              "path": "deep-dive/evaluate/baseline-vendoring.md",
+              "prompt": "vendor_baseline.py download + SHA verify, baseline_integrity.py, _manifest.json, VERSIONS.json, rules-resolve CI gate. Cite those files."
+            }
+          ]
+        },
+        {
+          "id": "plan",
+          "title": "Phase 3: Plan",
+          "path": "deep-dive/plan.md",
+          "prompt": "LLM narration, citation guard, sequential-thinking MCP, design-area grouping. Cite .github/skills/plan/SKILL.md, hooks/post_tool_use.py."
+        },
+        {
+          "id": "scaffold",
+          "title": "Phase 4: Scaffold",
+          "children": [
+            {
+              "id": "scaffold-engine",
+              "title": "Scaffold Engine & Template Registry",
+              "path": "deep-dive/scaffold/engine-and-registry.md",
+              "prompt": "scaffold/engine.py dedup-by-(template,scope), RULE_TO_TEMPLATE registry, archetype auto-resolution, JSON-Schema validation. Cite scaffold/engine.py, scaffold/template_registry.py."
+            },
+            {
+              "id": "avm-templates",
+              "title": "AVM Bicep Templates",
+              "path": "deep-dive/scaffold/avm-templates.md",
+              "prompt": "7 templates in scripts/scaffold/avm_templates/ + schemas. Cite each .bicep file, each .schema.json."
+            }
+          ]
+        },
+        {
+          "id": "orchestration",
+          "title": "Orchestration (/slz-run)",
+          "path": "deep-dive/orchestration.md",
+          "prompt": "slz-run prompt, phase sequencing, pauses, --no-pause. Cite .github/prompts/slz-run.prompt.md, .github/instructions/slz-readiness.instructions.md §6."
+        },
+        {
+          "id": "release",
+          "title": "Release Process",
+          "path": "deep-dive/release-process.md",
+          "prompt": "scripts/release.py bumps four files; release.yml verifies tag; zip packaging. Cite scripts/release.py:1-125, .github/workflows/release.yml."
+        },
+        {
+          "id": "testing",
+          "title": "Testing Strategy",
+          "path": "deep-dive/testing.md",
+          "prompt": "unit tests (golden determinism, scaffold dedup, scope flags, hook decisions), whatif bicep build. Cite tests/unit/*.py, tests/test_hooks.py, .github/workflows/ci.yml."
+        }
+      ]
+    }
+  ]
+}

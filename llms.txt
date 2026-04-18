@@ -1,0 +1,56 @@
+# llms.txt
+
+> LLM-readable index for [slz-readiness](https://github.com/msucharda/slz-readiness) — a GitHub Copilot CLI plugin that audits Azure tenants against the Sovereign Landing Zone baseline. Four phases: Discover → Evaluate → Plan → Scaffold. Read-only against Azure; deterministic in Evaluate and Scaffold; LLM narration only in Plan behind a citation guard.
+
+Version: 0.4.0. License: MIT. Baseline pin: Azure/Azure-Landing-Zones-Library @ `559a4c86fd57eddd9ee5047fb01a455866bd1cf8`.
+
+## Onboarding
+
+- [Contributor Guide](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/onboarding/contributor.md): Environment setup, first task walkthrough, debugging, testing, contribution workflow.
+- [Staff Engineer Guide](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/onboarding/staff-engineer.md): System philosophy, decision log, dependency rationale, failure modes.
+- [Executive Guide](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/onboarding/executive.md): Capability map, risk assessment, investment thesis.
+- [Product Manager Guide](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/onboarding/product-manager.md): User journeys, feature map, limitations, FAQ.
+
+## Architecture
+
+- [Architecture Overview](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/architecture.md): 4-phase pipeline, data contracts, three invariants.
+- [Plugin Mechanics](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/plugin-mechanics.md): `apm.yml`, skills, prompts, MCP.
+- [Hooks](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/hooks.md): Pre-tool-use verb allowlist + post-tool-use citation guard.
+
+## Getting started
+
+- [Overview](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/getting-started/overview.md): What slz-readiness is and isn't.
+- [Installation](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/getting-started/installation.md): Copilot CLI plugin install, Azure prerequisites.
+- [Quick Start](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/getting-started/quick-start.md): First audit end-to-end.
+- [Artifacts](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/getting-started/artifacts.md): findings.json, gaps.json, plan.md, bicep/, trace.jsonl.
+
+## Deep dive
+
+### Discover
+- [CLI & Scope](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/discover/cli-and-scope.md)
+- [The 6 Discoverers](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/discover/discoverers.md)
+- [The `az` Wrapper](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/discover/az-wrapper.md)
+
+### Evaluate
+- [Rule Engine](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/evaluate/rule-engine.md): `engine.py:51-140`, aggregate vs per-resource.
+- [Matchers](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/evaluate/matchers.md): 5 matcher kinds.
+- [Rules Catalog](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/evaluate/rules-catalog.md): All 14 rules.
+- [Baseline Vendoring](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/evaluate/baseline-vendoring.md): SHA pin + integrity.
+
+### Plan
+- [Plan Phase](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/plan.md): LLM narration + citation guard.
+
+### Scaffold
+- [Engine & Registry](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/scaffold/engine-and-registry.md)
+- [AVM Templates](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/scaffold/avm-templates.md): 7 templates.
+
+### Operations
+- [Orchestration](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/orchestration.md): The `/slz-run` prompt.
+- [Release Process](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/release-process.md): 4-file lockstep.
+- [Testing](https://github.com/msucharda/slz-readiness/blob/main/wiki/docs/deep-dive/testing.md): Unit, golden, CI gates.
+
+## Optional
+
+- [`docs/architecture.md`](https://github.com/msucharda/slz-readiness/blob/main/docs/architecture.md): First-party architecture note.
+- [`docs/anti-hallucination.md`](https://github.com/msucharda/slz-readiness/blob/main/docs/anti-hallucination.md): Safety contract.
+- [Full wiki text](https://github.com/msucharda/slz-readiness/blob/main/wiki/llms-full.txt): All wiki pages concatenated for LLM context.

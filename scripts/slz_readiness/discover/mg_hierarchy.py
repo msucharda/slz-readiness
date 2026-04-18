@@ -22,7 +22,7 @@ def present_mg_ids() -> list[str]:
     hardcoded SLZ ``SCOPES`` with this list to avoid probing absent MGs.
     Empty list on error / empty tenants.
     """
-    return sorted({mg.get("name") for mg in _list_mgs() if mg.get("name")})
+    return sorted({name for mg in _list_mgs() if (name := mg.get("name"))})
 
 
 def discover() -> list[dict[str, Any]]:

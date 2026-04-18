@@ -127,10 +127,23 @@ def _deploy_commands(emitted: list[dict[str, Any]]) -> dict[str, list[str]]:
     return {"bash": bash_lines, "pwsh": pwsh_lines}
 
 
+def _load_alias_for_doc(run_dir: Path | None) -> dict[str, str]:
+    """Re-read ``mg_alias.json`` for how-to-deploy.md emission.
+
+    Thin wrapper around :func:`slz_readiness._alias_io.load_alias_map`
+    with tracing suppressed (the doc emitter is read-only and shouldn't
+    pollute the trace log with a second ``alias.loaded`` entry already
+    emitted by the scaffold engine on the same run).
+    """
+    from .._alias_io import load_alias_map
+    return load_alias_map(run_dir, trace_label=None)
+
+
 def _write_how_to_deploy(
     *,
     out_dir: Path,
     emitted: list[dict[str, Any]],
+    run_dir: Path | None = None,
 ) -> None:
     """Emit ``how-to-deploy.md`` with Wave-1/Wave-2 recipes in Bash + PowerShell.
 
@@ -166,6 +179,37 @@ def _write_how_to_deploy(
         "run `what-if` first and review the result before `create`."
     )
     parts.append("")
+
+    # v0.7.0 brownfield retargeting block — emitted only when a non-empty
+    # ``mg_alias.json`` was loaded by the engine. Tells the operator which
+    # ``MG_ID`` value to substitute per template scope so per-archetype
+    # deployments hit the customer's actual MG, not the canonical SLZ name.
+    alias_map = _load_alias_for_doc(run_dir)
+    if alias_map:
+        parts.append("## Brownfield retargeting (mg_alias.json)")
+        parts.append("")
+        parts.append(
+            "Your `mg_alias.json` maps canonical SLZ roles to your tenant's "
+            "actual management-group names. When the deploy commands below "
+            "ask for `MG_ID` / `<your-mg-id>`, use the **right-hand value** "
+            "for each template's role. Per-archetype templates "
+            "(`archetype-policies-<role>.bicep`, `sovereignty-confidential-policies-<role>.bicep`) "
+            "are deployed once per scope — pick the MG accordingly."
+        )
+        parts.append("")
+        parts.append(
+            _summary.render_table(
+                ["Canonical role", "Your MG name"],
+                [[k, v] for k, v in sorted(alias_map.items())],
+            )
+        )
+        parts.append("")
+        parts.append(
+            "Roles not listed above are still treated as their canonical "
+            "SLZ names. Re-run `slz-reconcile` to update the mapping."
+        )
+        parts.append("")
+
     parts.append("## Two knobs, two different jobs")
     parts.append("")
     parts.append(
@@ -629,10 +673,16 @@ def main(gaps_path: Path, params_path: Path, out_dir: Path) -> None:
     gaps = gaps_doc.get("gaps", gaps_doc) if isinstance(gaps_doc, dict) else gaps_doc
     params_by_template = json.loads(params_path.read_text(encoding="utf-8"))
     out_dir.mkdir(parents=True, exist_ok=True)
+    # v0.7.0: Scaffold reads ``mg_alias.json`` from the gaps file's parent
+    # (the canonical artifacts/<run>/ directory). Falls back to out_dir
+    # when gaps is supplied from elsewhere.
+    run_dir = gaps_path.parent
     with _trace.tracer(out_dir, phase="scaffold"):
         _trace.log("scaffold.begin", gap_count=len(gaps))
         try:
-            emitted, warnings = scaffold_for_gaps(gaps, params_by_template, out_dir)
+            emitted, warnings = scaffold_for_gaps(
+                gaps, params_by_template, out_dir, run_dir=run_dir
+            )
         except ScaffoldError as exc:
             click.echo(f"SCAFFOLD ERROR: {exc}", err=True)
             sys.exit(2)
@@ -642,7 +692,7 @@ def main(gaps_path: Path, params_path: Path, out_dir: Path) -> None:
             encoding="utf-8",
         )
         _write_scaffold_summary(out_dir=out_dir, gaps=gaps, emitted=emitted, warnings=warnings)
-        _write_how_to_deploy(out_dir=out_dir, emitted=emitted)
+        _write_how_to_deploy(out_dir=out_dir, emitted=emitted, run_dir=run_dir)
         _write_run_rollup(out_dir)
     click.echo(f"Emitted {len(emitted)} templates -> {out_dir}")
     if warnings:

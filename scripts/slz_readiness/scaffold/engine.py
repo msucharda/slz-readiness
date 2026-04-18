@@ -350,17 +350,51 @@ def _emit(
     return result
 
 
+def _load_alias_map(run_dir: Path | None) -> dict[str, str]:
+    """Return ``{role: customer_mg}`` for non-null entries in ``mg_alias.json``.
+
+    Thin wrapper around :func:`slz_readiness._alias_io.load_alias_map`
+    pinned to the ``scaffold`` trace label.
+    """
+    from .._alias_io import load_alias_map
+    return load_alias_map(run_dir, trace_label="scaffold")
+
+
 def scaffold_for_gaps(
     gaps: list[dict[str, Any]],
     params_by_template: dict[str, dict[str, Any]],
     out_dir: Path,
+    *,
+    run_dir: Path | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Write bicep + params files for `gaps`. Returns (emitted, warnings)."""
+    """Write bicep + params files for `gaps`. Returns (emitted, warnings).
+
+    ``run_dir`` (defaults to ``out_dir``) is the artifacts directory the
+    CLI writes into; ``mg_alias.json``, when present, is loaded from here
+    so Scaffold can advertise brownfield retargeting in
+    ``how-to-deploy.md``. The skip-existing transform is implicit: the
+    Track-2 matcher already excludes def-id-matched assignments from
+    ``gap.observed.missing``, which ``_resolve_archetype_assignments``
+    consumes verbatim.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "bicep").mkdir(exist_ok=True)
     (out_dir / "params").mkdir(exist_ok=True)
 
+    # v0.7.0: brownfield retargeting hint. The actual scope-rewrite happens
+    # at Evaluate-time (selector aliasing) and at deploy-time (operator picks
+    # MG_ID per ``how-to-deploy.md``). This loader exists so Scaffold can
+    # surface the alias mapping in warnings + how-to-deploy.md.
+    alias_map = _load_alias_map(run_dir if run_dir is not None else out_dir)
+
     warnings: list[str] = []
+    if alias_map:
+        warnings.append(
+            "[brownfield] mg_alias.json detected — "
+            f"{len(alias_map)} canonical role(s) retargeted to customer MGs: "
+            + ", ".join(f"{k}→{v}" for k, v in sorted(alias_map.items()))
+            + ". Use these names when filling MG_ID placeholders in how-to-deploy.md."
+        )
     # Group: key = (template, scope_hint) -> list of contributing rule_ids + one representative gap
     buckets: dict[tuple[str, str], dict[str, Any]] = {}
     for gap in gaps:
@@ -391,6 +425,39 @@ def scaffold_for_gaps(
             warnings.extend(
                 f"[{tmpl}:{scope}] {msg}" if not msg.startswith("[") else msg for msg in w
             )
+            # v0.7.0: surface skip-existing — when the matcher's def-id
+            # fallback collapsed required→missing, scaffold emits fewer
+            # assignments. Tell the operator which were considered already
+            # present (by name OR equivalent definition id).
+            obs = bucket["gap"].get("observed") or {}
+            present_names = obs.get("present") or []
+            matched_by_defid = obs.get("matched_by_defid") or []
+            skipped_total = len(present_names) + len(matched_by_defid)
+            if skipped_total:
+                _trace.log(
+                    "scaffold.skip_existing",
+                    template=tmpl,
+                    scope=scope or "tenant",
+                    skipped_count=skipped_total,
+                    skipped_names=sorted(present_names),
+                    matched_by_defid=matched_by_defid,
+                )
+                if matched_by_defid:
+                    pairs = ", ".join(
+                        f"{m.get('required_name','?')}→{m.get('observed_name','?')}"
+                        for m in matched_by_defid
+                    )
+                    warnings.append(
+                        f"[{tmpl}:{scope or 'tenant'}] skipped {skipped_total} assignment(s) "
+                        f"already on tenant ({len(present_names)} by name, "
+                        f"{len(matched_by_defid)} by policyDefinitionId equivalence). "
+                        f"Equivalence pairs: {pairs}."
+                    )
+                else:
+                    warnings.append(
+                        f"[{tmpl}:{scope or 'tenant'}] skipped {skipped_total} assignment(s) "
+                        "already present on tenant."
+                    )
             if not assignments:
                 warnings.append(f"[{tmpl}:{scope}] No resolvable assignments; skipping emit")
                 continue

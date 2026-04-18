@@ -3,6 +3,13 @@
 NO LLM calls. NO network calls. Two runs over the same findings produce
 byte-identical gaps.json. The ordering is stable: rules are sorted by
 `rule_id`, gaps within a rule are sorted by `resource_id`.
+
+Brownfield note (v0.6.0): if ``artifacts/<run>/mg_alias.json`` exists and
+maps any canonical SLZ role to a non-null customer MG name, the engine
+rewrites ``matcher.selector.scope: mg/<role>`` to use the aliased name
+AND substitutes aliased names into ``expected`` lists. The contract
+extends to: ``(findings.json, mg_alias.json) → gaps.json`` is
+byte-identical across runs. See :mod:`slz_readiness.reconcile`.
 """
 from __future__ import annotations
 
@@ -15,6 +22,44 @@ from .. import _summary, _trace
 from .loaders import Rule, load_all_rules
 from .matchers import get_matcher
 from .models import Gap
+
+_ALIAS_FILE = "mg_alias.json"
+
+
+def _load_alias_map(run_dir: Path) -> dict[str, str]:
+    """Return ``{role: customer_mg}`` for every non-null alias.
+
+    Thin wrapper around :func:`slz_readiness._alias_io.load_alias_map`
+    that pins the trace label to ``evaluate``. Kept as a private name so
+    existing imports inside engine.py keep working.
+    """
+    from .._alias_io import load_alias_map
+    return load_alias_map(run_dir, trace_label="evaluate")
+
+
+def _apply_alias_to_selector(
+    selector: dict[str, Any], alias_map: dict[str, str]
+) -> dict[str, Any]:
+    """Rewrite ``scope: mg/<role>`` to ``scope: mg/<customer_mg>`` when aliased."""
+    if not alias_map:
+        return selector
+    scope = selector.get("scope")
+    if not isinstance(scope, str) or not scope.startswith("mg/"):
+        return selector
+    role = scope[len("mg/"):]
+    aliased = alias_map.get(role)
+    if not aliased:
+        return selector
+    return {**selector, "scope": f"mg/{aliased}"}
+
+
+def _apply_alias_to_expected(expected: Any, alias_map: dict[str, str]) -> Any:
+    """Substitute aliased role names inside an ``expected`` list (e.g. the
+    ``mg.slz.hierarchy_shape`` required-MG list). Items not aliased pass
+    through unchanged so the canonical name is still acceptable."""
+    if not alias_map or not isinstance(expected, list):
+        return expected
+    return [alias_map.get(item, item) if isinstance(item, str) else item for item in expected]
 
 
 def _finding_selector(finding: dict[str, Any], selector: dict[str, Any]) -> bool:
@@ -70,6 +115,7 @@ def evaluate(
     rules: list[Rule] | None = None,
     *,
     tally_out: dict[str, Any] | None = None,
+    alias_map: dict[str, str] | None = None,
 ) -> list[Gap]:
     """Run every rule over ``findings`` and return gaps.
 
@@ -78,12 +124,18 @@ def evaluate(
     caller can summarise the run without re-iterating. Pure function; no
     side effects other than ``_trace.log`` (which is itself a no-op outside a
     tracer context).
+
+    ``alias_map`` (role → customer-MG) enables brownfield re-targeting. An
+    empty or ``None`` map means canonical SLZ scopes are used unchanged —
+    byte-identical output to pre-v0.6.0 Evaluate.
     """
     rules = rules if rules is not None else load_all_rules()
+    alias_map = alias_map or {}
     gaps: list[Gap] = []
 
     for rule in sorted(rules, key=lambda r: r.rule_id):
-        selector = rule.matcher.get("selector", {})
+        selector = _apply_alias_to_selector(rule.matcher.get("selector", {}), alias_map)
+        expected = _apply_alias_to_expected(rule.expected, alias_map)
         target_findings = [f for f in findings if _finding_selector(f, selector)]
 
         # If any finding in-scope is an error finding, emit an unknown-severity
@@ -116,7 +168,7 @@ def evaluate(
                 if observed_list and all(isinstance(x, list) for x in observed_list):
                     observed = [x for sub in observed_list for x in sub]
             matcher_fn = get_matcher(rule.matcher["type"])
-            passed, snapshot = matcher_fn(observed, rule.expected, rule.matcher)
+            passed, snapshot = matcher_fn(observed, expected, rule.matcher)
             _trace.log(
                 "rule.fire",
                 rule_id=rule.rule_id,
@@ -145,7 +197,7 @@ def evaluate(
         # Per-resource rules produce one gap per non-compliant resource.
         for f in sorted(target_findings, key=lambda f: f.get("resource_id", "")):
             matcher_fn = get_matcher(rule.matcher["type"])
-            passed, snapshot = matcher_fn(f.get("observed_state"), rule.expected, rule.matcher)
+            passed, snapshot = matcher_fn(f.get("observed_state"), expected, rule.matcher)
             _trace.log(
                 "rule.fire",
                 rule_id=rule.rule_id,
@@ -195,7 +247,8 @@ def run(findings_path: Path, gaps_path: Path) -> int:
     }
     with _trace.tracer(gaps_path.parent, phase="evaluate"):
         _trace.log("evaluate.begin", findings=len(findings))
-        gaps = evaluate(findings, tally_out=tally)
+        alias_map = _load_alias_map(gaps_path.parent)
+        gaps = evaluate(findings, tally_out=tally, alias_map=alias_map)
         _trace.log("evaluate.end", gap_count=len(gaps))
         gaps_path.parent.mkdir(parents=True, exist_ok=True)
         gap_dicts = [gap_to_dict(g) for g in gaps]
@@ -232,6 +285,37 @@ def _top_largest_gaps(gaps: list[dict[str, Any]], n: int = 5) -> list[dict[str, 
         key=lambda g: (-_missing_count(g), g.get("rule_id", ""), g.get("resource_id", "")),
     )
     return [g for g in ranked if _missing_count(g) > 0][:n]
+
+
+def _brownfield_hint(gaps: list[dict[str, Any]]) -> str | None:
+    """Return a single-line warning if `mg.slz.hierarchy_shape` reports
+    many MGs missing — signals the tenant likely already runs a non-SLZ
+    landing zone. Threshold: 10 of 14 canonical SLZ MGs missing.
+
+    Returned string (or None if threshold not met) is appended to
+    `evaluate.summary.md` so the operator sees it before gating to Plan.
+    Threshold chosen so fresh-tenant fixtures (all 14 missing) trigger,
+    but a legitimate CAF-aligned tenant with 3-4 MGs missing does not.
+    """
+    for g in gaps:
+        if g.get("rule_id") != "mg.slz.hierarchy_shape":
+            continue
+        observed = g.get("observed")
+        if not isinstance(observed, dict):
+            continue
+        missing = observed.get("missing")
+        if isinstance(missing, list) and len(missing) >= 10:
+            return (
+                "> WARNING: Brownfield hint — `mg.slz.hierarchy_shape` reports "
+                f"{len(missing)} of 14 SLZ MGs missing. If this tenant already "
+                "operates a landing zone under different MG names, the gap list "
+                "overstates the remediation cost. Run `/slz-reconcile` to map "
+                "canonical SLZ roles to your tenant's actual MGs, then re-run "
+                "Discover and Evaluate — they will consume `mg_alias.json` to "
+                "retarget probes and selectors. See `docs/brownfield.md` for "
+                "the full retargeting workflow."
+            )
+    return None
 
 
 def _write_evaluate_summary(
@@ -360,5 +444,9 @@ def _write_evaluate_summary(
     parts.append("")
     parts.append("- `gaps.json` — full gap list with baseline citations")
     parts.append("- `trace.jsonl` — `rule.fire` events for every rule evaluated")
+    hint = _brownfield_hint(gaps)
+    if hint is not None:
+        parts.append("")
+        parts.append(hint)
     _summary.write_md(run_dir / "evaluate.summary.md", "\n".join(parts))
     _trace.log("evaluate.summary", gap_count=len(gaps), **tally)

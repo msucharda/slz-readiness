@@ -47,7 +47,7 @@ def _write_stage(stages_dir: Path, name: str, findings: list) -> None:
         _trace.log("stage.write_error", path=str(path), error=str(exc))
 
 
-def _call_discover(mod, progress_cb, subscription_filter):
+def _call_discover(mod, progress_cb, subscription_filter, run_dir=None):
     """Invoke ``mod.discover()`` passing optional kwargs if supported."""
     sig = inspect.signature(mod.discover)
     kwargs = {}
@@ -55,6 +55,8 @@ def _call_discover(mod, progress_cb, subscription_filter):
         kwargs["progress_cb"] = progress_cb
     if "subscription_filter" in sig.parameters and subscription_filter is not None:
         kwargs["subscription_filter"] = subscription_filter
+    if "run_dir" in sig.parameters and run_dir is not None:
+        kwargs["run_dir"] = run_dir
     return mod.discover(**kwargs)
 
 
@@ -161,6 +163,10 @@ def main(
     # --- Run -------------------------------------------------------------
     findings: list = []
     run_dir = out_path.parent
+    # v0.7.1: run_dir is now passed explicitly to each discoverer that
+    # accepts it (see ``_call_discover``). The legacy module-global
+    # ``_alias.set_run_dir`` shim is preserved for back-compat but no
+    # longer required by the CLI.
     stages_dir = run_dir / "stages"
     module_records: list[dict] = []
     total_start = time.monotonic()
@@ -184,6 +190,7 @@ def main(
                     mod,
                     _progress.make_callback(name),
                     sub_filter,
+                    run_dir=run_dir,
                 )
             except Exception as exc:  # noqa: BLE001
                 elapsed = time.monotonic() - t0

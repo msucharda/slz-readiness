@@ -1,8 +1,12 @@
 """Discover Azure Policy assignments at the SLZ management-group scopes."""
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 
+from .. import _trace
+from ._alias import load_aliased_mgs
 from .az_common import AzError, az_cmd_str, error_finding, run_az
 
 # Scopes we sweep for policy assignments. Covers every archetype-bearing MG
@@ -25,11 +29,37 @@ SCOPES = [
 ]
 
 
-def discover(progress_cb: Optional[Callable[[str, int, int], None]] = None) -> list[dict[str, Any]]:
+def _probe_targets(present: set[str], run_dir: Path | None = None) -> list[str]:
+    """Return the MG list to sweep — canonical SLZ names ∪ brownfield aliases.
+
+    Greenfield (no ``mg_alias.json``): returns ``[mg for mg in SCOPES if mg in present]``,
+    byte-identical to pre-v0.7.0 behaviour.
+
+    Brownfield: union with non-null customer MG names from the alias file.
+    Each alias is intersected against ``present`` so we never probe a name
+    the tenant doesn't have. Duplicates removed; canonical order preserved
+    for the SLZ names, then aliased names appended in sorted order so
+    ``trace.jsonl`` is stable.
+    """
+    targets: list[str] = [mg for mg in SCOPES if mg in present]
+    aliased = load_aliased_mgs(run_dir)
+    seen = set(targets)
+    for mg in aliased:
+        if mg in present and mg not in seen:
+            targets.append(mg)
+            seen.add(mg)
+            _trace.log("discover.extra_mg_probed", module="policy_assignments", mg=mg)
+    return targets
+
+
+def discover(
+    progress_cb: Callable[[str, int, int], None] | None = None,
+    run_dir: Path | None = None,
+) -> list[dict[str, Any]]:
     from .mg_hierarchy import present_mg_ids
 
     present = set(present_mg_ids())
-    targets = [mg for mg in SCOPES if mg in present]
+    targets = _probe_targets(present, run_dir=run_dir)
     findings: list[dict[str, Any]] = []
     for i, mg in enumerate(targets, start=1):
         if progress_cb is not None:
@@ -60,7 +90,17 @@ def discover(progress_cb: Optional[Callable[[str, int, int], None]] = None) -> l
                 "resource_id": f"scope:mg/{mg}",
                 "scope": f"mg/{mg}",
                 "observed_state": [
-                    {"name": a.get("name"), "displayName": a.get("displayName")}
+                    {
+                        "name": a.get("name"),
+                        "displayName": a.get("displayName"),
+                        # v0.7.0: capture identity fields needed by rung-B
+                        # equivalence (renamed assignments) and rung-C
+                        # parameter drift. These are already returned by
+                        # ``az policy assignment list`` — just keep them.
+                        "policyDefinitionId": a.get("policyDefinitionId"),
+                        "enforcementMode": a.get("enforcementMode"),
+                        "notScopes": a.get("notScopes") or [],
+                    }
                     for a in (assignments or [])
                 ],
                 "query_cmd": az_cmd_str(args),
