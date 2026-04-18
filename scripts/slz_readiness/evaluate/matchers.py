@@ -17,7 +17,26 @@ from .. import _trace
 from .loaders import RuleLoadError, read_baseline_json
 from .models import BaselineRef
 
-Matcher = Callable[[Any, Any, dict[str, Any]], tuple[bool, Any]]
+Matcher = Callable[[Any, Any, dict[str, Any]], tuple[bool, Any] | tuple[bool, Any, str | None]]
+
+
+def _unpack_matcher_result(
+    result: Any,
+) -> tuple[bool, Any, str | None]:
+    """Normalise matcher return shapes.
+
+    v0.1.0–v0.7.x matchers return ``(passed, snapshot)``.
+
+    v0.8.0 matchers that emit a non-blocking drift status may return
+    ``(passed, snapshot, status_override)`` — for example
+    ``(False, {...}, "parameter_drift")``. When ``status_override`` is
+    non-None the engine uses it in place of the default ``"missing"``.
+    """
+    if isinstance(result, tuple) and len(result) == 3:
+        passed, snapshot, status_override = result
+        return bool(passed), snapshot, status_override
+    passed, snapshot = result
+    return bool(passed), snapshot, None
 
 
 def _get_path(obj: Any, dotted: str) -> Any:
@@ -199,12 +218,154 @@ def any_subscription_has_workspace(
     }
 
 
+def policy_parameters_match(
+    observed: Any, expected: Any, spec: dict[str, Any]
+) -> tuple[bool, Any, str | None]:
+    """v0.8.0 rung-C: compare assigned policy parameter values against the
+    baseline archetype's expected assignment parameter values.
+
+    ``observed`` is the list of policy-assignment objects from Discover
+    (each carries a ``parameters`` dict per v0.8.0). The rule's baseline
+    archetype is read via ``spec['archetype_ref']`` and each required
+    assignment's ``.alz_policy_assignment.json`` is loaded to extract its
+    ``properties.parameters``. For every assignment present on both
+    sides, any parameter whose value differs is surfaced as drift.
+
+    ``ignore_parameters`` (list, optional in spec) — parameter keys that
+    are expected to differ (e.g. ``listOfAllowedLocations``). Defaults to
+    ``["listOfAllowedLocations", "effect"]`` since tenants routinely
+    override these and drift would be noise.
+
+    Returns ``(passed, snapshot, status_override)``:
+
+    * ``passed=True`` when no drift found (or assignments absent — that's
+      covered by ``archetype_policies_applied``).
+    * ``passed=False`` with ``status_override='parameter_drift'`` when
+      drift is detected. Snapshot lists the drifted
+      ``{assignment_name: {key: {observed, expected}}}`` entries.
+    """
+    baseline_ref = BaselineRef(**spec["archetype_ref"])
+    archetype = read_baseline_json(baseline_ref)
+    required: list[str] = archetype.get("policy_assignments", []) or []
+    ignore_keys = set(
+        spec.get("ignore_parameters")
+        or ["listOfAllowedLocations", "effect"]
+    )
+
+    obs_list = list(observed or [])
+    obs_by_name = {item.get("name"): item for item in obs_list if item.get("name")}
+
+    drift: dict[str, dict[str, dict[str, Any]]] = {}
+    for name in required:
+        if name not in obs_by_name:
+            # absence is a rung-B concern, not rung-C
+            continue
+        parts = baseline_ref.path.split("/")
+        if len(parts) < 4 or parts[-2] != "archetype_definitions":
+            continue
+        subtree = "/".join(parts[:-2])
+        ref = BaselineRef(
+            source=baseline_ref.source,
+            path=f"{subtree}/policy_assignments/{name}.alz_policy_assignment.json",
+            sha=baseline_ref.sha,
+        )
+        try:
+            doc = read_baseline_json(ref)
+        except (FileNotFoundError, OSError, json.JSONDecodeError, KeyError, RuleLoadError):
+            continue
+        expected_params = (
+            ((doc or {}).get("properties") or {}).get("parameters") or {}
+        )
+        observed_params = obs_by_name[name].get("parameters") or {}
+        per_assign_drift: dict[str, dict[str, Any]] = {}
+        for key, exp_val in expected_params.items():
+            if key in ignore_keys:
+                continue
+            # baseline assignment JSON stores parameters as
+            # ``{key: {"value": ...}}`` (same shape as runtime ARM).
+            exp_value = (exp_val or {}).get("value") if isinstance(exp_val, dict) else exp_val
+            obs_entry = observed_params.get(key)
+            obs_value = (obs_entry or {}).get("value") if isinstance(obs_entry, dict) else obs_entry
+            if obs_value != exp_value:
+                per_assign_drift[key] = {
+                    "observed": obs_value,
+                    "expected": exp_value,
+                }
+        if per_assign_drift:
+            drift[name] = per_assign_drift
+
+    if not drift:
+        return True, {"drifted_assignments": []}, None
+    return False, {"drifted_assignments": drift}, "parameter_drift"
+
+
+def custom_initiative_equivalent(
+    observed: Any, expected: Any, spec: dict[str, Any]
+) -> tuple[bool, Any, str | None]:
+    """v0.8.0 rung-D: compare a custom ``policySetDefinition`` against the
+    matching vendored SLZ initiative by definition-id set equivalence.
+
+    ``observed`` is a list of custom initiative objects from Discover
+    (``custom_initiatives.py``), each with ``policyDefinitions`` (list of
+    ``{policyDefinitionId, policyDefinitionReferenceId, parameters}``).
+
+    The rule's baseline reference points at the canonical SLZ
+    ``*.alz_policy_set_definition.json`` whose ``policyDefinitions`` list
+    is the authoritative set. Equivalence = same **set** of
+    ``policyDefinitionId`` values (order- and reference-id-insensitive).
+
+    Returns ``(passed, snapshot, status_override)`` where drift carries
+    ``status_override='custom_initiative_drift'``. ``missing_defs`` and
+    ``extra_defs`` are surfaced verbatim to Plan.
+    """
+    baseline_ref = BaselineRef(**spec["initiative_ref"])
+    initiative = read_baseline_json(baseline_ref)
+    expected_defs = {
+        (d or {}).get("policyDefinitionId")
+        for d in (((initiative or {}).get("properties") or {}).get("policyDefinitions") or [])
+        if isinstance(d, dict)
+    }
+    expected_defs.discard(None)
+
+    obs_list = list(observed or [])
+    # The rule may select by assignment/definition id in ``target_definition_id``;
+    # otherwise all observed custom initiatives are compared.
+    target_id = spec.get("target_definition_id")
+    if target_id:
+        obs_list = [o for o in obs_list if (o or {}).get("id") == target_id or (o or {}).get("name") == target_id]
+
+    drift: list[dict[str, Any]] = []
+    for item in obs_list:
+        obs_defs = {
+            (d or {}).get("policyDefinitionId")
+            for d in ((item or {}).get("policyDefinitions") or [])
+            if isinstance(d, dict)
+        }
+        obs_defs.discard(None)
+        missing = sorted(str(x) for x in expected_defs - obs_defs)
+        extra = sorted(str(x) for x in obs_defs - expected_defs)
+        if missing or extra:
+            drift.append(
+                {
+                    "initiative_id": item.get("id") or item.get("name"),
+                    "missing_defs": missing,
+                    "extra_defs": extra,
+                }
+            )
+
+    if not drift:
+        return True, {"drifted_initiatives": []}, None
+    return False, {"drifted_initiatives": drift}, "custom_initiative_drift"
+
+
 MATCHERS: dict[str, Matcher] = {
     "equals": equals,
     "contains_all": contains_all,
     "policy_assignments_include": policy_assignments_include,
     "archetype_policies_applied": archetype_policies_applied,
     "any_subscription_has_workspace": any_subscription_has_workspace,
+    "policy_parameters_match": policy_parameters_match,
+    "custom_initiative_equivalent": custom_initiative_equivalent,
 }
 
 

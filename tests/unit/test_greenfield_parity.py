@@ -92,3 +92,27 @@ def test_discover_alias_loader_no_file_equals_all_null_file(tmp_path: Path) -> N
 
     assert load_aliased_mgs(no_file_dir / "findings.json") == []
     assert load_aliased_mgs(null_file_dir / "findings.json") == []
+
+
+def test_scaffold_rewrite_names_no_file_equals_rewrite_off(tmp_path: Path) -> None:
+    """v0.8.0 Track α parity: ``--rewrite-names`` with NO ``mg_alias.json``
+    is a no-op relative to ``--rewrite-names=False``. Emitted Bicep must
+    be byte-identical — greenfield users who pass the flag by accident
+    get the canonical v0.7.x output."""
+    from slz_readiness.scaffold.engine import scaffold_for_gaps
+
+    gap = {
+        "rule_id": "mg.slz.hierarchy_shape",
+        "severity": "high",
+        "resource_id": "tenant",
+        "status": "missing",
+    }
+    params = {"management-groups": {"parentManagementGroupId": "tenant-root"}}
+
+    out_on = tmp_path / "on"
+    out_off = tmp_path / "off"
+    scaffold_for_gaps([gap], params, out_on, run_dir=tmp_path, rewrite_names=True)
+    scaffold_for_gaps([gap], params, out_off, run_dir=tmp_path, rewrite_names=False)
+    assert (out_on / "bicep" / "management-groups.bicep").read_text(
+        encoding="utf-8"
+    ) == (out_off / "bicep" / "management-groups.bicep").read_text(encoding="utf-8")

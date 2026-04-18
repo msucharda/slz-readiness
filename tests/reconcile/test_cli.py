@@ -54,7 +54,7 @@ def test_greenfield_rejects_stray_proposal(tmp_path: Path) -> None:
         ],
     )
     assert result.exit_code == 2
-    assert "--proposal is only valid with --mode brownfield" in result.output
+    assert "--proposal / --heuristic are only valid with --mode brownfield" in result.output
 
 
 def test_brownfield_requires_proposal(tmp_path: Path) -> None:

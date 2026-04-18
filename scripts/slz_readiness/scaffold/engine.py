@@ -34,7 +34,22 @@ from jsonschema import Draft202012Validator
 
 from .. import _trace
 from ..evaluate.loaders import BASELINE_DIR
+from ..reconcile import CANONICAL_ROLES
 from .template_registry import ALLOWED_TEMPLATES, RULE_TO_TEMPLATE, TEMPLATE_RUNBOOKS
+
+# v0.8.0 Track α — whole-word regex over canonical role names as they
+# appear in `name: '<role>'` string literals inside templates. The
+# template_registry restricts this pattern to the `management-groups`
+# template (the only one that hardcodes canonical names today); other
+# templates contain the names only in comments or not at all, so the
+# substitution is a no-op there. Anchored to the `name:` property to
+# avoid collision with displayNames, comments, or any future literals
+# that legitimately carry a canonical role word as a value.
+_MG_NAME_PROP_RE = re.compile(
+    r"(?P<prefix>\bname:\s*')(?P<role>"
+    + "|".join(re.escape(r) for r in CANONICAL_ROLES)
+    + r")(?P<suffix>')"
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATES_DIR = REPO_ROOT / "scripts" / "scaffold" / "avm_templates"
@@ -274,12 +289,43 @@ def _resolve_archetype_assignments(
     return assignments, warnings
 
 
+def _rewrite_names_in_bicep(contents: str, alias_map: dict[str, str]) -> tuple[str, int]:
+    """Substitute canonical MG role names with tenant names in a Bicep file.
+
+    Only rewrites occurrences inside ``name: '<role>'`` string-literal
+    properties (the pattern used by :mod:`management-groups.bicep`).
+    Bicep symbolic identifiers (``resource corp ...``) and comments are
+    left untouched — symbolic names are internal to the file and the
+    compiler doesn't care; comments are documentation.
+
+    Returns the (rewritten_contents, substitution_count).
+    """
+    if not alias_map:
+        return contents, 0
+    count = 0
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal count
+        role = match.group("role")
+        target = alias_map.get(role)
+        if not target:
+            return match.group(0)
+        count += 1
+        return f"{match.group('prefix')}{target}{match.group('suffix')}"
+
+    rewritten = _MG_NAME_PROP_RE.sub(_replace, contents)
+    return rewritten, count
+
+
 def _emit(
     out_dir: Path,
     template: str,
     scope_hint: str,
     params: dict[str, Any],
     rule_ids: list[str],
+    *,
+    alias_map: dict[str, str] | None = None,
+    rewrite_names: bool = False,
 ) -> dict[str, Any]:
     if template not in ALLOWED_TEMPLATES:
         raise ScaffoldError(f"Template '{template}' not in ALLOWED_TEMPLATES")
@@ -292,7 +338,20 @@ def _emit(
     filename = f"{template}{suffix}"
     dst_bicep = out_dir / "bicep" / f"{filename}.bicep"
     dst_params = out_dir / "params" / f"{filename}.parameters.json"
-    shutil.copy2(src, dst_bicep)
+    substitutions = 0
+    if rewrite_names and alias_map:
+        src_contents = src.read_text(encoding="utf-8")
+        rewritten, substitutions = _rewrite_names_in_bicep(src_contents, alias_map)
+        dst_bicep.write_text(rewritten, encoding="utf-8")
+        if substitutions:
+            _trace.log(
+                "template.rewrite",
+                template=template,
+                scope=scope_hint or "tenant",
+                substitutions=substitutions,
+            )
+    else:
+        shutil.copy2(src, dst_bicep)
     dst_params.write_text(
         json.dumps(
             {
@@ -323,6 +382,8 @@ def _emit(
         "rule_ids": sorted(set(rule_ids)),
         "rollout_phase": params.get("rolloutPhase"),
     }
+    if rewrite_names and alias_map:
+        result["name_substitutions"] = substitutions
 
     # Emit runbooks for operators who lack tenant-scope deploy RBAC. These are
     # static artifacts the operator runs manually — the plugin never invokes
@@ -366,6 +427,7 @@ def scaffold_for_gaps(
     out_dir: Path,
     *,
     run_dir: Path | None = None,
+    rewrite_names: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Write bicep + params files for `gaps`. Returns (emitted, warnings).
 
@@ -376,6 +438,14 @@ def scaffold_for_gaps(
     Track-2 matcher already excludes def-id-matched assignments from
     ``gap.observed.missing``, which ``_resolve_archetype_assignments``
     consumes verbatim.
+
+    ``rewrite_names`` (v0.8.0): when True AND ``mg_alias.json`` has
+    non-null entries, rewrite canonical MG role names to the tenant's
+    names inside emitted ``.bicep`` files (see
+    :func:`_rewrite_names_in_bicep`). Default False preserves the
+    v0.7.x contract — canonical names + alias table in
+    ``how-to-deploy.md``. Opt-in because some operators want canonical
+    Bicep for cross-tenant reuse.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "bicep").mkdir(exist_ok=True)
@@ -394,6 +464,18 @@ def scaffold_for_gaps(
             f"{len(alias_map)} canonical role(s) retargeted to customer MGs: "
             + ", ".join(f"{k}→{v}" for k, v in sorted(alias_map.items()))
             + ". Use these names when filling MG_ID placeholders in how-to-deploy.md."
+        )
+    if rewrite_names and alias_map:
+        warnings.append(
+            f"[brownfield] --rewrite-names ON — emitted Bicep will use tenant MG "
+            f"names (apply-ready for this tenant). "
+            f"{len(alias_map)} canonical role(s) will be substituted in "
+            "management-groups.bicep; other templates are name-agnostic."
+        )
+    elif rewrite_names and not alias_map:
+        warnings.append(
+            "[brownfield] --rewrite-names supplied but mg_alias.json is empty or "
+            "missing; emitting canonical SLZ names (greenfield behaviour)."
         )
     # Group: key = (template, scope_hint) -> list of contributing rule_ids + one representative gap
     buckets: dict[tuple[str, str], dict[str, Any]] = {}
@@ -498,7 +580,17 @@ def scaffold_for_gaps(
                     "rolloutPhase=enforce after the observe window to activate Deny."
                 )
         try:
-            emitted.append(_emit(out_dir, tmpl, scope, params, bucket["rule_ids"]))
+            emitted.append(
+                _emit(
+                    out_dir,
+                    tmpl,
+                    scope,
+                    params,
+                    bucket["rule_ids"],
+                    alias_map=alias_map,
+                    rewrite_names=rewrite_names,
+                )
+            )
         except ScaffoldError as exc:
             # Fix 6: demote per-bucket emit failures to warnings so one bad
             # gap doesn't blow up the entire scaffold run. The caller (cli)

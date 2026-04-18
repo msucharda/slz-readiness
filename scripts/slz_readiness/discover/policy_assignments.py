@@ -100,6 +100,13 @@ def discover(
                         "policyDefinitionId": a.get("policyDefinitionId"),
                         "enforcementMode": a.get("enforcementMode"),
                         "notScopes": a.get("notScopes") or [],
+                        # v0.8.0: capture assignment parameters so rung-C
+                        # (parameter-drift) matchers can compare against
+                        # vendored archetype assignment docs. The azcli
+                        # returns parameters as a dict of
+                        # ``{name: {"value": ...}}``; keep as-is so the
+                        # matcher can address by key.
+                        "parameters": a.get("parameters") or {},
                     }
                     for a in (assignments or [])
                 ],

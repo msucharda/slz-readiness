@@ -43,6 +43,18 @@ RULE_TO_TEMPLATE: dict[str, str] = {
     "logging.management_la_workspace_exists": "log-analytics",
 }
 
+# v0.8.0: informational-only rules. These emit drift-status gaps
+# (``parameter_drift`` / ``custom_initiative_drift``) that Plan narrates
+# but Scaffold does not auto-remediate — too many tenant overrides are
+# legitimate. The scaffold engine already silently skips rule_ids absent
+# from ``RULE_TO_TEMPLATE``; this set is the audit-trail marker that the
+# omission is INTENTIONAL, not an oversight.
+INFORMATIONAL_RULES: set[str] = {
+    "archetype.alz_corp_policy_parameters_match",
+    "archetype.alz_landing_zones_policy_parameters_match",
+    "archetype.alz_platform_policy_parameters_match",
+}
+
 # Templates shipped in the plugin. The scaffold engine refuses to emit
 # anything not in this list.
 ALLOWED_TEMPLATES = {
