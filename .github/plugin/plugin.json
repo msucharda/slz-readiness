@@ -1,6 +1,6 @@
 {
   "name": "slz-readiness",
-  "version": "0.5.4",
+  "version": "0.6.0",
   "description": "Audit an Azure tenant for Sovereign Landing Zone readiness against a vendored, SHA-pinned Cloud Adoption Framework baseline. Read-only discovery, deterministic evaluation, AVM-based Bicep scaffolding.",
   "author": {
     "name": "msucharda"
@@ -24,12 +24,14 @@
   ],
   "skills": [
     "./.github/skills/discover/",
+    "./.github/skills/reconcile/",
     "./.github/skills/evaluate/",
     "./.github/skills/plan/",
     "./.github/skills/scaffold/"
   ],
   "commands": [
     "./.github/prompts/slz-discover.prompt.md",
+    "./.github/prompts/slz-reconcile.prompt.md",
     "./.github/prompts/slz-evaluate.prompt.md",
     "./.github/prompts/slz-plan.prompt.md",
     "./.github/prompts/slz-scaffold.prompt.md",

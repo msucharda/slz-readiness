@@ -1,5 +1,5 @@
 name: slz-readiness
-version: 0.5.4
+version: 0.6.0
 description: >-
   Audit an Azure tenant for Sovereign Landing Zone (SLZ) readiness against a
   vendored, SHA-pinned Cloud Adoption Framework baseline. Read-only discovery,
