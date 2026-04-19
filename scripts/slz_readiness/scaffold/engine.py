@@ -33,7 +33,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from .. import _trace
-from ..evaluate.loaders import BASELINE_DIR
+from ..evaluate.loaders import BASELINE_DIR, RULES_DIR
 from ..reconcile import CANONICAL_ROLES
 from .template_registry import (
     ALLOWED_TEMPLATES,
@@ -152,6 +152,62 @@ def _validate_params(template_stem: str, params: dict[str, Any]) -> None:
 
 
 _MG_FROM_RESOURCE_ID = re.compile(r"^scope:mg/(?P<mg>[A-Za-z0-9_-]+)$")
+_MG_FROM_SELECTOR_SCOPE = re.compile(r"^mg/(?P<mg>[A-Za-z0-9_-]+)$")
+
+
+def _load_rule_scope_overrides() -> dict[str, str]:
+    """Map ``rule_id`` → ``mg/<name>`` where the rule's
+    ``matcher.selector.scope`` pins a single MG but ``matcher.aggregate`` is
+    ``tenant``.
+
+    Evaluate collapses such rules into a single gap with
+    ``resource_id="tenant"`` (see ``evaluate/engine.py`` aggregate path),
+    which in turn collapses Scaffold's per-scope bucket key. We recover
+    the intended per-MG scope from the rule YAML so every MG-scoped
+    Confidential rule emits its own Bicep file (one for
+    ``confidential_corp``, one for ``confidential_online``).
+
+    Parsed lazily from the rule YAMLs on disk; failures fall through to
+    the legacy tenant-scope behaviour (no crash on malformed YAML).
+    """
+    try:
+        import yaml  # local import: yaml is already a dep of evaluate/loaders.
+    except ImportError:  # pragma: no cover — yaml is a hard dep of the package.
+        return {}
+    overrides: dict[str, str] = {}
+    if not RULES_DIR.exists():  # pragma: no cover
+        return overrides
+    for path in RULES_DIR.rglob("*.yml"):
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:  # noqa: BLE001 — defensive; any parse failure = skip
+            continue
+        rule_id = data.get("rule_id")
+        matcher = data.get("matcher") or {}
+        selector = matcher.get("selector") or {}
+        scope = selector.get("scope")
+        aggregate = matcher.get("aggregate")
+        if not (isinstance(rule_id, str) and isinstance(scope, str)):
+            continue
+        m = _MG_FROM_SELECTOR_SCOPE.match(scope)
+        if not m:
+            continue
+        if aggregate != "tenant":
+            # Non-aggregated rules already carry per-resource scope in the
+            # gap's resource_id — nothing to override.
+            continue
+        overrides[rule_id] = f"scope:mg/{m.group('mg')}"
+    return overrides
+
+
+_RULE_SCOPE_OVERRIDE_CACHE: dict[str, str] | None = None
+
+
+def _rule_scope_override(rule_id: str) -> str | None:
+    global _RULE_SCOPE_OVERRIDE_CACHE
+    if _RULE_SCOPE_OVERRIDE_CACHE is None:
+        _RULE_SCOPE_OVERRIDE_CACHE = _load_rule_scope_overrides()
+    return _RULE_SCOPE_OVERRIDE_CACHE.get(rule_id)
 
 
 def _scope_hint_for_gap(gap: dict[str, Any]) -> str:
@@ -159,11 +215,25 @@ def _scope_hint_for_gap(gap: dict[str, Any]) -> str:
 
     ``scope:mg/corp`` -> ``corp``; ``tenant`` / empty -> ``""``. Used to
     differentiate per-MG emits.
+
+    When the gap came from an aggregate-tenant rule that nonetheless
+    pins a single MG in ``matcher.selector.scope`` (e.g. the two
+    Confidential sovereignty rules), we fall back to the rule's pinned
+    scope so Scaffold's bucket key remains per-MG. Without this, both
+    Confidential rules collapse onto one bucket and only one Bicep file
+    is emitted — the exact regression observed in run 20260419T132307Z.
     """
     rid = gap.get("resource_id", "")
     m = _MG_FROM_RESOURCE_ID.match(rid)
     if m:
         return m.group("mg")
+    rule_id = gap.get("rule_id")
+    if isinstance(rule_id, str):
+        override = _rule_scope_override(rule_id)
+        if override:
+            m2 = _MG_FROM_RESOURCE_ID.match(override)
+            if m2:
+                return m2.group("mg")
     return ""
 
 
@@ -248,6 +318,17 @@ def _resolve_archetype_assignments(
         pa_file = pa_dir / f"{name}.alz_policy_assignment.json"
         if not pa_file.exists():
             missing_json_skipped.append(name)
+            # Observability hook (v0.12.0): distinguish baseline-integrity
+            # skips from placeholder skips so operators can see in
+            # trace.jsonl whether the vendored library is stale or whether
+            # the ALZ assignment genuinely needs hand-editing.
+            _trace.log(
+                "scaffold.archetype_skip",
+                rule_id=rule_id,
+                subtree=subtree,
+                assignment_name=name,
+                reason="missing_json",
+            )
             continue
         pa = json.loads(pa_file.read_text(encoding="utf-8"))
         props = pa.get("properties", {})
@@ -264,6 +345,13 @@ def _resolve_archetype_assignments(
         if has_placeholder:
             placeholder_skipped.append(name)
             if not include_placeholders:
+                _trace.log(
+                    "scaffold.archetype_skip",
+                    rule_id=rule_id,
+                    subtree=subtree,
+                    assignment_name=name,
+                    reason="placeholder",
+                )
                 continue
         if rollout_phase == "audit":
             base_params, n = _downshift_deny_to_audit(base_params)
@@ -480,7 +568,7 @@ def scaffold_for_gaps(
     out_dir: Path,
     *,
     run_dir: Path | None = None,
-    rewrite_names: bool = False,
+    rewrite_names: bool | None = None,
     include_placeholders: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Write bicep + params files for `gaps`. Returns (emitted, warnings).
@@ -493,13 +581,20 @@ def scaffold_for_gaps(
     ``gap.observed.missing``, which ``_resolve_archetype_assignments``
     consumes verbatim.
 
-    ``rewrite_names`` (v0.8.0): when True AND ``mg_alias.json`` has
-    non-null entries, rewrite canonical MG role names to the tenant's
-    names inside emitted ``.bicep`` files (see
-    :func:`_rewrite_names_in_bicep`). Default False preserves the
-    v0.7.x contract — canonical names + alias table in
-    ``how-to-deploy.md``. Opt-in because some operators want canonical
-    Bicep for cross-tenant reuse.
+    ``rewrite_names`` (v0.8.0, tri-state in v0.12.0): when True AND
+    ``mg_alias.json`` has non-null entries, rewrite canonical MG role
+    names to the tenant's names inside emitted ``.bicep`` files (see
+    :func:`_rewrite_names_in_bicep`).
+
+    * ``True`` — always rewrite (explicit operator opt-in).
+    * ``False`` — never rewrite (explicit operator opt-out).
+    * ``None`` (default) — auto-enable iff ``mg_alias.json`` is present
+      AND at least one ``management-groups`` createX flag is false
+      (i.e. a MG is already on the tenant under its aliased name).
+      This is the brownfield default — without it the MG Bicep emits
+      canonical names, fails to match the aliased MGs on the tenant,
+      and produces a disconnected parallel tree at the tenant root
+      (root cause of blocker #2 in run 20260419T132307Z).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "bicep").mkdir(exist_ok=True)
@@ -511,6 +606,22 @@ def scaffold_for_gaps(
     # surface the alias mapping in warnings + how-to-deploy.md.
     alias_map = _load_alias_map(run_dir if run_dir is not None else out_dir)
 
+    # Auto-flip when rewrite_names was not explicitly set: enable when
+    # alias entries are present AND the params for management-groups
+    # carry any createX=false (i.e. we're in brownfield with at least
+    # one already-present MG the Bicep would otherwise try to recreate).
+    mg_params = params_by_template.get("management-groups") or {}
+    has_brownfield_create_flag = any(
+        k.startswith("create") and v is False for k, v in mg_params.items()
+    )
+    auto_flipped = False
+    if rewrite_names is None:
+        if alias_map and has_brownfield_create_flag:
+            rewrite_names = True
+            auto_flipped = True
+        else:
+            rewrite_names = False
+
     warnings: list[str] = []
     if alias_map:
         warnings.append(
@@ -518,6 +629,14 @@ def scaffold_for_gaps(
             f"{len(alias_map)} canonical role(s) retargeted to customer MGs: "
             + ", ".join(f"{k}→{v}" for k, v in sorted(alias_map.items()))
             + ". Use these names when filling MG_ID placeholders in how-to-deploy.md."
+        )
+    if auto_flipped:
+        warnings.append(
+            "[brownfield] rewrite_names auto-enabled because mg_alias.json is "
+            "present AND at least one management-groups createX flag is false. "
+            "Canonical SLZ names in management-groups.bicep will be rewritten "
+            "to tenant names so existing (aliased) MGs are not re-created. "
+            "Pass --no-rewrite-names to override."
         )
     if rewrite_names and alias_map:
         warnings.append(
@@ -561,7 +680,8 @@ def scaffold_for_gaps(
                 include_placeholders=include_placeholders,
             )
             warnings.extend(
-                f"[{tmpl}:{scope}] {msg}" if not msg.startswith("[") else msg for msg in w
+                f"[{tmpl}:{scope or 'tenant'}] {msg}" if not msg.startswith("[") else msg
+                for msg in w
             )
             # v0.7.0: surface skip-existing — when the matcher's def-id
             # fallback collapsed required→missing, scaffold emits fewer
@@ -597,7 +717,15 @@ def scaffold_for_gaps(
                         "already present on tenant."
                     )
             if not assignments:
-                warnings.append(f"[{tmpl}:{scope}] No resolvable assignments; skipping emit")
+                _trace.log(
+                    "scaffold.archetype_skip",
+                    rule_id=bucket["gap"].get("rule_id"),
+                    scope=scope or "tenant",
+                    reason="no_assignments_resolved",
+                )
+                warnings.append(
+                    f"[{tmpl}:{scope or 'tenant'}] No resolvable assignments; skipping emit"
+                )
                 continue
             params: dict[str, Any] = {"assignments": assignments}
             if "defaultEnforcementMode" in user_params:
@@ -618,6 +746,15 @@ def scaffold_for_gaps(
         elif tmpl == "sovereignty-confidential-policies":
             params = dict(user_params)
             params.setdefault("rolloutPhase", "audit")
+            if not params.get("listOfAllowedLocations"):
+                warnings.append(
+                    "[sovereignty-confidential-policies] listOfAllowedLocations is empty — "
+                    "the Confidential policy set will flag every non-global region as "
+                    "non-compliant under audit and Deny writes to every non-global region "
+                    "under enforce. Populate the params file with your sovereign regions "
+                    "before deploying."
+                )
+                params["listOfAllowedLocations"] = []
         else:
             params = dict(user_params)
         # Phase-level advisory warnings (one per emitted template).

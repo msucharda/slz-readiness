@@ -350,6 +350,16 @@ def _write_how_to_deploy(
             "wrong scope (they stick to the MG's existing parent chain)."
         )
         parts.append("")
+        parts.append(
+            "**Detailed procedure:** see "
+            "[`scripts/scaffold/runbooks/brownfield-mg-reparent.md`]"
+            "(../../scripts/scaffold/runbooks/brownfield-mg-reparent.md) "
+            "for the canonical parent-of table and a step-by-step "
+            "move-then-deploy recipe. It also documents "
+            "`ParentManagementGroupCannotBeChanged`, the specific failure "
+            "mode a naïve deploy hits in brownfield tenants."
+        )
+        parts.append("")
     if alias_map and rewrite_names:
         parts.append("## Brownfield retargeting (applied — apply-ready Bicep)")
         parts.append("")
@@ -440,18 +450,51 @@ def _write_how_to_deploy(
         "order, running `what-if` before each `create`:"
     )
     parts.append("")
-    parts.append(
-        "1. **`management-groups`** — creates the MG tree each subsequent "
-        "assignment references. Skip if your MG hierarchy already matches "
-        "`data/baseline/alz-library`.\n"
-        "2. **`log-analytics`** (subscription scope) — creates the "
-        "`rg-slz-management` resource group *and* the workspace. Deploy "
-        "before any policy that references the workspace id.\n"
-        "3. **`archetype-policies`** / **`sovereignty-*-policies`** (MG scope) — "
-        "policy assignments. Deploy *after* management-groups and "
-        "log-analytics, otherwise the `policyDefinitionId` / "
-        "`workspaceResourceId` references will fail validation."
-    )
+    # Build deploy-order list from what was actually emitted. Avoids
+    # referencing templates that weren't produced (e.g. the log-analytics
+    # bullet when the LA workspace already exists and the rule passed).
+    _order_bullets: list[str] = []
+    _idx = 1
+    emitted_stems = {e.get("template") for e in emitted}
+    if "management-groups" in emitted_stems:
+        _order_bullets.append(
+            f"{_idx}. **`management-groups`** — creates the MG tree each "
+            "subsequent assignment references. Skip if your MG hierarchy "
+            "already matches `data/baseline/alz-library`."
+        )
+        _idx += 1
+    if "log-analytics" in emitted_stems:
+        _order_bullets.append(
+            f"{_idx}. **`log-analytics`** (subscription scope) — creates the "
+            "`rg-slz-management` resource group *and* the workspace. Deploy "
+            "before any policy that references the workspace id."
+        )
+        _idx += 1
+    if emitted_stems & {"archetype-policies", "sovereignty-global-policies",
+                        "sovereignty-confidential-policies"}:
+        _prereq = []
+        if "management-groups" in emitted_stems:
+            _prereq.append("management-groups")
+        if "log-analytics" in emitted_stems:
+            _prereq.append("log-analytics")
+        _prereq_clause = (
+            f" Deploy *after* {' and '.join(_prereq)}, otherwise the "
+            "`policyDefinitionId` / `workspaceResourceId` references will "
+            "fail validation."
+            if _prereq
+            else ""
+        )
+        _order_bullets.append(
+            f"{_idx}. **`archetype-policies`** / **`sovereignty-*-policies`** "
+            f"(MG scope) — policy assignments.{_prereq_clause}"
+        )
+    if _order_bullets:
+        parts.append("\n".join(_order_bullets))
+    else:
+        parts.append(
+            "No templates emitted for this run — nothing to deploy. "
+            "See `scaffold.summary.md` for skip reasons."
+        )
     parts.append("")
     parts.append("## Prerequisites")
     parts.append("")
@@ -888,15 +931,17 @@ def _write_run_rollup(out_dir: Path) -> None:
 )
 @click.option("--out", "out_dir", required=True, type=click.Path(path_type=Path))
 @click.option(
-    "--rewrite-names",
-    is_flag=True,
-    default=False,
+    "--rewrite-names/--no-rewrite-names",
+    "rewrite_names",
+    default=None,
     help=(
         "v0.8.0: rewrite canonical SLZ MG role names to your tenant's names "
         "inside emitted Bicep (requires a non-empty mg_alias.json in the "
-        "gaps-file directory). Default OFF — emits canonical names + alias "
-        "substitution table in how-to-deploy.md, preserving v0.7.x "
-        "behaviour. Turn ON for apply-ready Bicep in brownfield tenants."
+        "gaps-file directory). Default (neither flag) AUTO: enable when "
+        "mg_alias.json is present AND at least one management-groups "
+        "createX flag is false (brownfield with existing MGs). Pass "
+        "--no-rewrite-names to force canonical names (cross-tenant reuse); "
+        "pass --rewrite-names to force even on empty alias map."
     ),
 )
 @click.option(
@@ -916,7 +961,7 @@ def main(
     gaps_path: Path,
     params_path: Path | None,
     out_dir: Path,
-    rewrite_names: bool,
+    rewrite_names: bool | None,
     include_placeholders: bool,
 ) -> None:
     gaps_doc = json.loads(gaps_path.read_text(encoding="utf-8"))
@@ -1015,11 +1060,25 @@ def main(
             warnings=warnings,
             run_dir=run_dir,
         )
+        # Resolve the tri-state rewrite_names the same way the engine does
+        # so how-to-deploy.md reflects the actual emitted Bicep (the engine
+        # does the authoritative decision internally; we mirror it here so
+        # the "Brownfield retargeting (applied)" doc block accurately
+        # tracks the auto-flip).
+        _mg_params = params_by_template.get("management-groups") or {}
+        _has_brownfield = any(
+            k.startswith("create") and v is False for k, v in _mg_params.items()
+        )
+        _alias_for_doc = _load_alias_for_doc(run_dir)
+        if rewrite_names is None:
+            resolved_rewrite_names = bool(_alias_for_doc) and _has_brownfield
+        else:
+            resolved_rewrite_names = bool(rewrite_names)
         _write_how_to_deploy(
             out_dir=out_dir,
             emitted=emitted,
             run_dir=run_dir,
-            rewrite_names=rewrite_names,
+            rewrite_names=resolved_rewrite_names,
             tenant_id=tenant_id,
         )
         _write_run_rollup(out_dir)
