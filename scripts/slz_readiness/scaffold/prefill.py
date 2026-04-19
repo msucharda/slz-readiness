@@ -324,3 +324,50 @@ def classify_keys(
         if row:
             out[stem] = row
     return out
+
+
+# v0.12.1 — policy-critical parameters that silently default to a
+# dangerous value (empty list / missing identityLocation) when findings
+# carry no workspace location. Listed explicitly rather than derived so
+# the surface is auditable and the agent's prompt contract is stable.
+_LOCATION_KEYS: tuple[tuple[str, str], ...] = (
+    ("archetype-policies", "identityLocation"),
+    ("sovereignty-global-policies", "listOfAllowedLocations"),
+    ("sovereignty-confidential-policies", "listOfAllowedLocations"),
+)
+
+
+def needs_operator_input_keys(
+    prefilled: dict[str, dict[str, Any]],
+    user: dict[str, dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Flag policy-critical keys that prefill could not derive.
+
+    Returns a deterministically-sorted list of
+    ``{"template", "key", "reason"}`` entries for every location key that
+    is absent from both ``prefilled`` and operator-supplied ``user``
+    params. Consumed by the Scaffold UX: when non-empty, the agent MUST
+    prompt the operator for ``primary_location`` / ``allowed_locations``
+    via ``ask_user`` before accepting defaults. See
+    ``.github/prompts/slz-scaffold.prompt.md`` for the contract.
+
+    Pure function — no I/O, no randomness. Safe to call multiple times.
+    """
+    out: list[dict[str, str]] = []
+    for template, key in _LOCATION_KEYS:
+        pre = prefilled.get(template) or {}
+        usr = user.get(template) or {}
+        if not isinstance(pre, dict):
+            pre = {}
+        if not isinstance(usr, dict):
+            usr = {}
+        if key in pre or key in usr:
+            continue
+        out.append(
+            {
+                "template": template,
+                "key": key,
+                "reason": "modal_region_unavailable",
+            }
+        )
+    return sorted(out, key=lambda e: (e["template"], e["key"]))

@@ -56,6 +56,24 @@ _MG_NAME_PROP_RE = re.compile(
     + r")(?P<suffix>')"
 )
 
+# v0.12.1 — tenantResourceId(...) call sites also hard-code canonical role
+# names (e.g. `var slzId = tenantResourceId('Microsoft.Management/managementGroups', 'slz')`
+# in management-groups.bicep). The `name:` property rewrite above renames the
+# resource itself, but leaves these id-computation call sites untouched, so
+# children reference a non-existent canonical parent MG and `az deployment mg
+# create` fails with ParentManagementGroupNotFound. The regex is tightly
+# scoped to the Microsoft.Management/managementGroups resource type to avoid
+# false positives if a future template calls tenantResourceId() for other
+# types. Both single- and double-quoted strings are tolerated; flexible
+# whitespace matches future formatting drift.
+_MG_TENANT_RESOURCE_ID_RE = re.compile(
+    r"(?P<prefix>\btenantResourceId\(\s*"
+    r"['\"]Microsoft\.Management/managementGroups['\"]\s*,\s*['\"])"
+    r"(?P<role>"
+    + "|".join(re.escape(r) for r in CANONICAL_ROLES)
+    + r")(?P<suffix>['\"])"
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATES_DIR = REPO_ROOT / "scripts" / "scaffold" / "avm_templates"
 RUNBOOKS_DIR = REPO_ROOT / "scripts" / "scaffold" / "runbooks"
@@ -424,13 +442,18 @@ def _resolve_archetype_assignments(
 def _rewrite_names_in_bicep(contents: str, alias_map: dict[str, str]) -> tuple[str, int]:
     """Substitute canonical MG role names with tenant names in a Bicep file.
 
-    Only rewrites occurrences inside ``name: '<role>'`` string-literal
-    properties (the pattern used by :mod:`management-groups.bicep`).
+    Rewrites occurrences inside two tightly-scoped patterns:
+
+    * ``name: '<role>'`` string-literal properties on MG resources
+      (so the emitted resource itself carries the tenant name).
+    * ``tenantResourceId('Microsoft.Management/managementGroups', '<role>')``
+      id-computation calls (so child MGs reference the aliased parent).
+
     Bicep symbolic identifiers (``resource corp ...``) and comments are
     left untouched — symbolic names are internal to the file and the
     compiler doesn't care; comments are documentation.
 
-    Returns the (rewritten_contents, substitution_count).
+    Returns the (rewritten_contents, total_substitution_count).
     """
     if not alias_map:
         return contents, 0
@@ -446,6 +469,7 @@ def _rewrite_names_in_bicep(contents: str, alias_map: dict[str, str]) -> tuple[s
         return f"{match.group('prefix')}{target}{match.group('suffix')}"
 
     rewritten = _MG_NAME_PROP_RE.sub(_replace, contents)
+    rewritten = _MG_TENANT_RESOURCE_ID_RE.sub(_replace, rewritten)
     return rewritten, count
 
 

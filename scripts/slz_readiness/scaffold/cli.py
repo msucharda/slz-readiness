@@ -10,7 +10,13 @@ import click
 
 from .. import _summary, _trace
 from .engine import ScaffoldError, scaffold_for_gaps
-from .prefill import classify_keys, merge_params, prefill_params, strip_engine_owned_fields
+from .prefill import (
+    classify_keys,
+    merge_params,
+    needs_operator_input_keys,
+    prefill_params,
+    strip_engine_owned_fields,
+)
 from .template_registry import INFORMATIONAL_RULES, RULE_TO_TEMPLATE, TEMPLATE_SCOPES
 
 # Human-readable order the deployment block recommends.
@@ -1010,6 +1016,11 @@ def main(
     cleaned_user, engine_owned_warnings = strip_engine_owned_fields(user_params)
     params_by_template = merge_params(prefilled, cleaned_user)
     key_origin = classify_keys(prefilled, cleaned_user)
+    # v0.12.1 — flag policy-critical location keys that neither prefill
+    # (no workspace-with-location in findings) nor the operator supplied.
+    # The Scaffold prompt reads this list to force a two-field ask_user
+    # (primary_location + allowed_locations) before accepting defaults.
+    needs_input = needs_operator_input_keys(prefilled, cleaned_user)
     with _trace.tracer(out_dir, phase="scaffold"):
         _trace.log(
             "scaffold.begin",
@@ -1018,6 +1029,7 @@ def main(
             include_placeholders=include_placeholders,
             prefilled_templates=sorted(prefilled.keys()),
             operator_params_supplied=params_path is not None,
+            needs_operator_input_count=len(needs_input),
         )
         # Emit scaffold.params.auto.json so the operator can see the final
         # merged param set + which keys came from prefill vs. their input.
@@ -1026,6 +1038,7 @@ def main(
                 {
                     "params_by_template": params_by_template,
                     "key_origin": key_origin,
+                    "needs_operator_input": needs_input,
                 },
                 indent=2,
                 sort_keys=True,
@@ -1048,6 +1061,22 @@ def main(
         # Prepend engine-owned override warnings (Phase D) so the summary
         # surfaces them alongside engine warnings.
         warnings = list(engine_owned_warnings) + list(warnings)
+        # v0.12.1 — surface location-input gap as a WARNING even if the
+        # agent bypasses the prompt. Without this, empty
+        # listOfAllowedLocations silently denies every region under
+        # enforce (and flags every resource under audit).
+        if needs_input:
+            missing_paths = ", ".join(
+                f"{e['template']}.{e['key']}" for e in needs_input
+            )
+            warnings.insert(
+                0,
+                "[location-input-required] The following policy-critical "
+                f"parameters were not derivable from findings: {missing_paths}. "
+                "Prompt the operator for primary_location + allowed_locations "
+                "via ask_user (see .github/prompts/slz-scaffold.prompt.md) "
+                "before running `az deployment … create`.",
+            )
         _trace.log("scaffold.end", emitted_count=len(emitted), warning_count=len(warnings))
         (out_dir / "scaffold.manifest.json").write_text(
             json.dumps({"emitted": emitted, "warnings": warnings}, indent=2, sort_keys=True) + "\n",
