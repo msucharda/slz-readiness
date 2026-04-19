@@ -1,0 +1,36 @@
+{
+  "children": [
+    {
+      "children": null,
+      "displayName": "platform",
+      "id": "/providers/Microsoft.Management/managementGroups/platform",
+      "name": "platform",
+      "type": "Microsoft.Management/managementGroups"
+    },
+    {
+      "children": null,
+      "displayName": "workloads",
+      "id": "/providers/Microsoft.Management/managementGroups/workloads",
+      "name": "workloads",
+      "type": "Microsoft.Management/managementGroups"
+    }
+  ],
+  "details": {
+    "managementGroupAncestors": null,
+    "managementGroupAncestorsChain": null,
+    "parent": {
+      "displayName": "sucharda",
+      "id": "/providers/Microsoft.Management/managementGroups/sucharda",
+      "name": "sucharda"
+    },
+    "path": null,
+    "updatedBy": "00000000-0000-0000-0000-000000000000",
+    "updatedTime": "2026-01-01T00:00:00.000000+00:00",
+    "version": 1
+  },
+  "displayName": "Sovereign Landing Zone",
+  "id": "/providers/Microsoft.Management/managementGroups/alz",
+  "name": "alz",
+  "tenantId": "00000000-0000-0000-0000-000000000001",
+  "type": "Microsoft.Management/managementGroups"
+}

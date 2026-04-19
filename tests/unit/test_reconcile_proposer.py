@@ -1,12 +1,19 @@
 """Tests for v0.8.0 reconcile heuristic proposer."""
 from __future__ import annotations
 
+import warnings
+
 from slz_readiness.reconcile import CANONICAL_ROLES
 from slz_readiness.reconcile.proposer import build_heuristic_proposal
 
 
 def _mg_summary(mgs: list[dict[str, str]]) -> dict:
-    """Build a findings.json payload with a single MG-summary finding."""
+    """Build a findings.json payload with a single MG-summary finding.
+
+    ``present_details`` is emitted as a **list** of ``{id, displayName,
+    parent_id}`` records — the canonical shape produced by
+    ``discover/mg_hierarchy.py``.
+    """
     return {
         "findings": [
             {
@@ -15,12 +22,56 @@ def _mg_summary(mgs: list[dict[str, str]]) -> dict:
                 "scope": "tenant",
                 "observed_state": {
                     "present_ids": [m["id"] for m in mgs],
-                    "present_details": {m["id"]: {"displayName": m["displayName"]} for m in mgs},
+                    "present_details": [
+                        {
+                            "id": m["id"],
+                            "displayName": m["displayName"],
+                            "parent_id": m.get("parent_id"),
+                        }
+                        for m in mgs
+                    ],
                 },
                 "query_cmd": "az account management-group list",
             }
         ]
     }
+
+
+def _mg_summary_legacy_dict(mgs: list[dict[str, str]]) -> dict:
+    """Legacy shape: ``present_details`` as a dict keyed by MG id."""
+    return {
+        "findings": [
+            {
+                "resource_type": "microsoft.management/managementgroups.summary",
+                "resource_id": "tenant",
+                "scope": "tenant",
+                "observed_state": {
+                    "present_ids": [m["id"] for m in mgs],
+                    "present_details": {
+                        m["id"]: {"displayName": m["displayName"]} for m in mgs
+                    },
+                },
+                "query_cmd": "az account management-group list",
+            }
+        ]
+    }
+
+
+def test_heuristic_accepts_legacy_dict_shape() -> None:
+    """Back-compat: older fixtures may still emit ``present_details`` as a
+    dict keyed by MG id. Proposer must handle that shape (with a
+    DeprecationWarning) and still match on displayName.
+    """
+    findings = _mg_summary_legacy_dict([
+        {"id": "mg-a", "displayName": "Management"},
+        {"id": "mg-b", "displayName": "Sandbox"},
+    ])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = build_heuristic_proposal(findings)
+    assert result["management"] == "mg-a"
+    assert result["sandbox"] == "mg-b"
+    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
 
 
 def test_heuristic_empty_findings_returns_all_null() -> None:

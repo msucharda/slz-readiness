@@ -20,6 +20,7 @@ Pure function. No LLM. No Azure. Unit-tested.
 """
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterable
 from typing import Any
 
@@ -54,8 +55,45 @@ _MATCH_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+def _normalise_present_details(raw: Any) -> dict[str, dict[str, Any]]:
+    """Return a ``{id: {displayName, parent_id, ...}}`` lookup.
+
+    Accepts both the canonical list shape emitted by
+    ``discover/mg_hierarchy.py`` (list of ``{id, displayName, parent_id}``
+    records) and the deprecated dict shape (``{id: {displayName}}``) that
+    older fixtures may still carry. Unknown shapes → empty dict.
+
+    The dict shape triggers a ``DeprecationWarning``; it is scheduled for
+    removal in a future minor once all baselines are regenerated.
+    """
+    if isinstance(raw, list):
+        out: dict[str, dict[str, Any]] = {}
+        for rec in raw:
+            if not isinstance(rec, dict):
+                continue
+            mg_id = rec.get("id")
+            if not isinstance(mg_id, str):
+                continue
+            out[mg_id] = rec
+        return out
+    if isinstance(raw, dict):
+        warnings.warn(
+            "reconcile.proposer: 'present_details' dict shape is deprecated; "
+            "emit a list of {id, displayName, parent_id} records instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return {
+            str(mg_id): rec
+            for mg_id, rec in raw.items()
+            if isinstance(rec, dict)
+        }
+    return {}
+
+
 def _extract_mg_records(findings: Any) -> list[dict[str, Any]]:
-    """Pull out ``{id, displayName}`` tuples for every MG the tenant has.
+    """Pull out ``{id, displayName, parent_id}`` tuples for every MG the
+    tenant has.
 
     Looks inside ``findings.json`` for the MG-summary finding written by
     ``discover/mg_hierarchy.py``. Returns ``[]`` when the summary is
@@ -71,16 +109,16 @@ def _extract_mg_records(findings: Any) -> list[dict[str, Any]]:
         if f.get("resource_type") != "microsoft.management/managementgroups.summary":
             continue
         obs = f.get("observed_state") or {}
-        # present_ids is the authoritative list; present_details gives names.
         ids = obs.get("present_ids") or []
-        details = obs.get("present_details") or {}
+        details_by_id = _normalise_present_details(obs.get("present_details"))
         for mg_id in ids:
-            rec: dict[str, Any] = {"id": str(mg_id)}
-            info = details.get(mg_id) if isinstance(details, dict) else None
-            if isinstance(info, dict):
-                rec["displayName"] = str(info.get("displayName", mg_id))
-            else:
-                rec["displayName"] = str(mg_id)
+            key = str(mg_id)
+            info = details_by_id.get(key) or {}
+            rec: dict[str, Any] = {
+                "id": key,
+                "displayName": str(info.get("displayName", key)),
+                "parent_id": info.get("parent_id"),
+            }
             out.append(rec)
         break  # one summary finding is authoritative
     return out

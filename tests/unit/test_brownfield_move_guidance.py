@@ -20,12 +20,16 @@ def test_mg_hierarchy_observed_state_has_present_details(monkeypatch) -> None:
         return mgs
 
     def fake_show(name: str):
+        # Mirror the real `az account management-group show --expand -o json`
+        # schema: ``details.parent`` at the top level (no ``properties``
+        # wrapper). See tests/fixtures/az/mg_show_alz.json for a sanitised
+        # live sample.
         return {
-            "properties": {
-                "details": {
-                    "parent": {"name": "tenant-root"} if name == "alz" else {"name": "alz"}
-                }
-            }
+            "name": name,
+            "displayName": "ALZ Root" if name == "alz" else "Landing Zones",
+            "details": {
+                "parent": {"name": "tenant-root"} if name == "alz" else {"name": "alz"}
+            },
         }
 
     monkeypatch.setattr(mg_hierarchy, "_list_mgs", fake_list_mgs)

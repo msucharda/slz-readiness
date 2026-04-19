@@ -1,0 +1,135 @@
+{
+  "_comment": "Synthetic 3-level hierarchy used by discover/reconcile golden tests. Keyed by MG name; each value is a sanitised `az account management-group show --name <n> --expand -o json` response. Tenant GUID and updatedBy are zeroed placeholders.",
+  "00000000-0000-0000-0000-000000000001": {
+    "children": [
+      {
+        "displayName": "customer-root",
+        "id": "/providers/Microsoft.Management/managementGroups/customer-root",
+        "name": "customer-root",
+        "type": "Microsoft.Management/managementGroups",
+        "children": null
+      }
+    ],
+    "details": {
+      "managementGroupAncestors": null,
+      "managementGroupAncestorsChain": null,
+      "parent": null,
+      "path": null,
+      "updatedBy": "00000000-0000-0000-0000-000000000000",
+      "updatedTime": "2026-01-01T00:00:00.000000+00:00",
+      "version": 1
+    },
+    "displayName": "Tenant Root Group",
+    "id": "/providers/Microsoft.Management/managementGroups/00000000-0000-0000-0000-000000000001",
+    "name": "00000000-0000-0000-0000-000000000001",
+    "tenantId": "00000000-0000-0000-0000-000000000001",
+    "type": "Microsoft.Management/managementGroups"
+  },
+  "customer-root": {
+    "children": [
+      {
+        "displayName": "Sovereign Landing Zone",
+        "id": "/providers/Microsoft.Management/managementGroups/alz",
+        "name": "alz",
+        "type": "Microsoft.Management/managementGroups",
+        "children": null
+      }
+    ],
+    "details": {
+      "managementGroupAncestors": null,
+      "managementGroupAncestorsChain": null,
+      "parent": {
+        "displayName": "Tenant Root Group",
+        "id": "/providers/Microsoft.Management/managementGroups/00000000-0000-0000-0000-000000000001",
+        "name": "00000000-0000-0000-0000-000000000001"
+      },
+      "path": null,
+      "updatedBy": "00000000-0000-0000-0000-000000000000",
+      "updatedTime": "2026-01-01T00:00:00.000000+00:00",
+      "version": 1
+    },
+    "displayName": "customer-root",
+    "id": "/providers/Microsoft.Management/managementGroups/customer-root",
+    "name": "customer-root",
+    "tenantId": "00000000-0000-0000-0000-000000000001",
+    "type": "Microsoft.Management/managementGroups"
+  },
+  "alz": {
+    "children": [
+      {
+        "displayName": "platform",
+        "id": "/providers/Microsoft.Management/managementGroups/platform",
+        "name": "platform",
+        "type": "Microsoft.Management/managementGroups",
+        "children": null
+      },
+      {
+        "displayName": "workloads",
+        "id": "/providers/Microsoft.Management/managementGroups/workloads",
+        "name": "workloads",
+        "type": "Microsoft.Management/managementGroups",
+        "children": null
+      }
+    ],
+    "details": {
+      "managementGroupAncestors": null,
+      "managementGroupAncestorsChain": null,
+      "parent": {
+        "displayName": "customer-root",
+        "id": "/providers/Microsoft.Management/managementGroups/customer-root",
+        "name": "customer-root"
+      },
+      "path": null,
+      "updatedBy": "00000000-0000-0000-0000-000000000000",
+      "updatedTime": "2026-01-01T00:00:00.000000+00:00",
+      "version": 1
+    },
+    "displayName": "Sovereign Landing Zone",
+    "id": "/providers/Microsoft.Management/managementGroups/alz",
+    "name": "alz",
+    "tenantId": "00000000-0000-0000-0000-000000000001",
+    "type": "Microsoft.Management/managementGroups"
+  },
+  "platform": {
+    "children": null,
+    "details": {
+      "managementGroupAncestors": null,
+      "managementGroupAncestorsChain": null,
+      "parent": {
+        "displayName": "Sovereign Landing Zone",
+        "id": "/providers/Microsoft.Management/managementGroups/alz",
+        "name": "alz"
+      },
+      "path": null,
+      "updatedBy": "00000000-0000-0000-0000-000000000000",
+      "updatedTime": "2026-01-01T00:00:00.000000+00:00",
+      "version": 1
+    },
+    "displayName": "platform",
+    "id": "/providers/Microsoft.Management/managementGroups/platform",
+    "name": "platform",
+    "tenantId": "00000000-0000-0000-0000-000000000001",
+    "type": "Microsoft.Management/managementGroups"
+  },
+  "workloads": {
+    "children": null,
+    "details": {
+      "managementGroupAncestors": null,
+      "managementGroupAncestorsChain": null,
+      "parent": {
+        "displayName": "Sovereign Landing Zone",
+        "id": "/providers/Microsoft.Management/managementGroups/alz",
+        "name": "alz"
+      },
+      "path": null,
+      "updatedBy": "00000000-0000-0000-0000-000000000000",
+      "updatedTime": "2026-01-01T00:00:00.000000+00:00",
+      "version": 1
+    },
+    "displayName": "workloads",
+    "id": "/providers/Microsoft.Management/managementGroups/workloads",
+    "name": "workloads",
+    "tenantId": "00000000-0000-0000-0000-000000000001",
+    "type": "Microsoft.Management/managementGroups"
+  }
+}
