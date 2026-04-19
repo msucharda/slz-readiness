@@ -13,15 +13,19 @@ Regression guard for two bugs that shipped in v0.9.x and caused the
    MG ``name``, so the heuristic lost the ``"Sovereign Landing Zone"``
    signal.
 
-This test pipes a sanitised real ``az account management-group show
---expand`` response (``tests/fixtures/az/mg_show_tree.json``) through
-both stages and asserts:
+This test also locks in the v0.10.0 **structural scoring** upgrade:
+the heuristic now picks ``slz → alz`` (the MG whose two children match
+the SLZ-intermediate shape) instead of the tenant-root GUID that the
+old first-match-wins logic returned.
+
+It pipes a sanitised real ``az account management-group show --expand``
+response (``tests/fixtures/az/mg_show_tree.json``) through both stages
+and asserts:
 
 * every ``parent_id`` is populated (no flattening),
 * ``displayName`` is preserved end-to-end,
-* the heuristic proposer picks ``slz → alz`` (the MG whose displayName
-  is "Sovereign Landing Zone"), ``platform → platform``,
-  ``landingzones → workloads``.
+* the heuristic proposer picks ``slz → alz``, ``platform → platform``,
+  ``landingzones → None`` (ambiguous; LLM resolves).
 """
 from __future__ import annotations
 
@@ -76,22 +80,20 @@ def test_discover_then_reconcile_over_real_cli_shape(monkeypatch) -> None:
     # Feed findings into the heuristic proposer and check the mapping.
     proposal = build_heuristic_proposal({"findings": findings})
 
-    # Iteration order is the alphabetically-sorted ``present_ids``:
-    #   1. "00000000-..."  displayName "Tenant Root Group"  → "root" matches slz
-    #   2. "alz"           displayName "Sovereign Landing Zone"
-    #                      → "sovereign" (slz taken) / "landing" → landingzones
-    #   3. "customer-root" → "root" (slz taken) → no match
-    #   4. "platform"      → platform
-    #   5. "workloads"     → no match
-    #
-    # This is the deterministic heuristic output with the displayName
-    # signal restored. A parent-chain enrichment (future work) would
-    # resolve slz → alz based on topology (``alz`` is the ancestor of
-    # ``platform``/``workloads``); that work is deferred.
-    root_id_local = "00000000-0000-0000-0000-000000000001"
-    assert proposal["slz"] == root_id_local
-    assert proposal["landingzones"] == "alz"
+    # v0.10.0 structural scoring:
+    #   - ``slz``: tenant-root excluded (parent_id is None). ``alz`` has
+    #     displayName "Sovereign Landing Zone" (+1) and two children
+    #     matching SLZ-intermediate shape (+3) → score 4; unique top.
+    #   - ``platform``: substring (+1) + parent claimed as slz (+2) = 3.
+    #   - ``landingzones``: ``alz`` already claimed; ``workloads`` has
+    #     no substring hit on any landingzones pattern → null; the LLM
+    #     resolves.
+    #   - ``customer-root``: substring "root" matches ``slz`` (+1) but
+    #     has only one child (``alz``) so no shape bonus; ``alz`` beats
+    #     it 4-1 on score.
+    assert proposal["slz"] == "alz"
     assert proposal["platform"] == "platform"
+    assert proposal["landingzones"] is None
 
     # No MG should map to two roles:
     claimed = [v for v in proposal.values() if v is not None]

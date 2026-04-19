@@ -106,6 +106,33 @@ Evaluate's deterministic contract is preserved:
 `(findings.json, mg_alias.json) → gaps.json` is byte-stable across
 re-runs.
 
+### Structural scoring (v0.10.0+)
+
+The heuristic proposer in
+[`scripts/slz_readiness/reconcile/proposer.py`](../scripts/slz_readiness/reconcile/proposer.py)
+is a pure function over the observed MG tree — no LLM, no Azure — and
+produces a best-effort `mg_alias.proposal.json` for the LLM phase to
+refine. It combines substring matching with two structural signals
+derived from `parent_id` + children shape:
+
+| Signal | Weight | Applies to |
+|---|---|---|
+| Substring match on `id` or `displayName` | +1 | every role |
+| Candidate is the tenant root (`parent_id is None`) | hard-exclude | role `slz` |
+| Candidate has ≥2 children whose names look like SLZ intermediate children (`platform`, `landing*`, `workload*`, `management`, `connectivity`, `identity`, `security`, `sandbox`, `decomm*`) | +3 | role `slz` |
+| Candidate's parent MG is the MG already claimed by `slz` (reinforces an existing substring hit) | +2 | roles `platform`, `landingzones`, `sandbox`, `decommissioned` |
+
+For each role the proposer picks the unique top-scoring MG among the
+unclaimed set; **ties emit `null` so the LLM per-role gate resolves
+them**. Roles are processed with `slz` first (so downstream parent-
+signals can reference it), then in the declared pattern order so
+more-specific patterns like `confidential_corp` still claim before
+the less-specific `corp`.
+
+This replaced the v0.8.0 first-match-wins logic that mis-mapped
+`slz → <tenant-root-GUID>` on real SLZ deployments where the customer
+had a non-canonical intermediate MG under the tenant root.
+
 ## Reporting
 
 If your tenant doesn't fit the patterns this doc describes (e.g.
