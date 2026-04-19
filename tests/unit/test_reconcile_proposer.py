@@ -116,15 +116,19 @@ def test_heuristic_skips_unknown_mgs() -> None:
     assert all(v is None for v in result.values())
 
 
-def test_heuristic_one_role_one_mg() -> None:
-    """Two MGs that both look like ``corp`` — only the first claims it."""
+def test_heuristic_one_role_one_mg_ties_emit_null() -> None:
+    """Two MGs with identical score for ``corp`` → null (LLM resolves).
+
+    v0.10.0 replaced first-match-wins with top-1 selection and
+    null-on-tie. Here both ``corp-production`` and ``corp-staging``
+    score exactly +1 (substring match only), so neither claims.
+    """
     findings = _mg_summary([
         {"id": "corp-production", "displayName": "Corp Prod"},
         {"id": "corp-staging", "displayName": "Corp Stage"},
     ])
     result = build_heuristic_proposal(findings)
-    assert result["corp"] == "corp-production"
-    # No second role claims the second MG; it stays orphaned.
+    assert result["corp"] is None
 
 
 def test_heuristic_no_mg_summary_returns_all_null() -> None:
@@ -138,13 +142,100 @@ def test_heuristic_no_mg_summary_returns_all_null() -> None:
 
 
 def test_heuristic_full_canonical_names() -> None:
-    """Tenant that deploys SLZ canonically — heuristic maps every role."""
+    """Tenant that deploys SLZ canonically — heuristic maps every role.
+
+    All MGs carry an explicit (fake) parent_id so none of them are hit
+    by the ``slz``-role tenant-root hard-filter; this lets ``slz`` claim
+    its own MG first and frees downstream roles (notably
+    ``landingzones``) from the ``"lz" ⊂ "slz"`` substring false-positive.
+    """
     mgs = [
-        {"id": role, "displayName": role.replace("_", " ").title()}
+        {
+            "id": role,
+            "displayName": role.replace("_", " ").title(),
+            "parent_id": "fake-parent",
+        }
         for role in CANONICAL_ROLES
     ]
     findings = _mg_summary(mgs)
     result = build_heuristic_proposal(findings)
     # At minimum, these obvious ones must round-trip:
-    for role in ("corp", "online", "platform", "management", "sandbox", "identity", "landingzones"):
+    for role in (
+        "corp",
+        "online",
+        "platform",
+        "management",
+        "sandbox",
+        "identity",
+        "landingzones",
+        "slz",
+    ):
         assert result[role] == role, f"role {role} did not round-trip: got {result[role]}"
+
+
+def test_heuristic_prefers_intermediate_over_tenant_root() -> None:
+    """Structural (v0.10.0): ``slz`` role must pick the MG whose children
+    look like SLZ intermediates, never the tenant root.
+
+    Mirrors the real slz-demo shape:
+    ``tenant-root -> sucharda -> alz -> {platform, workloads}``.
+    The old first-match-wins heuristic picked ``tenant-root`` (substring
+    ``root``); structural scoring filters root out and picks ``alz``
+    (the MG whose two children are ``platform`` and ``workloads``).
+    """
+    findings = _mg_summary([
+        {"id": "tenant-root", "displayName": "Tenant Root Group", "parent_id": None},
+        {"id": "sucharda", "displayName": "sucharda", "parent_id": "tenant-root"},
+        {"id": "alz", "displayName": "Sovereign Landing Zone", "parent_id": "sucharda"},
+        {"id": "platform", "displayName": "platform", "parent_id": "alz"},
+        {"id": "workloads", "displayName": "workloads", "parent_id": "alz"},
+    ])
+    result = build_heuristic_proposal(findings)
+    assert result["slz"] == "alz"
+    assert result["platform"] == "platform"
+    # ``workloads`` has no substring match for any landingzones pattern
+    # and ``alz`` is already claimed by ``slz`` → the role stays null
+    # and the LLM resolves it.
+    assert result["landingzones"] is None
+
+
+def test_heuristic_parent_signal_for_platform() -> None:
+    """Structural (v0.10.0): role ``platform`` gets +2 when its parent
+    MG is claimed as ``slz``. Makes platform robust even against
+    ambiguous sibling names.
+    """
+    findings = _mg_summary([
+        {"id": "root", "displayName": "Tenant Root Group", "parent_id": None},
+        {"id": "slz-mg", "displayName": "Sovereign Landing Zone", "parent_id": "root"},
+        {"id": "platform-plat", "displayName": "Platform", "parent_id": "slz-mg"},
+        {"id": "landingzones-lz", "displayName": "Landing Zones", "parent_id": "slz-mg"},
+    ])
+    result = build_heuristic_proposal(findings)
+    # slz_mg candidate has >=2 SLZ-shape children → +3; substring +1 → 4.
+    assert result["slz"] == "slz-mg"
+    # platform-plat: substring +1, parent is slz-mg → +2 = 3.
+    assert result["platform"] == "platform-plat"
+    assert result["landingzones"] == "landingzones-lz"
+
+
+def test_heuristic_slz_tenant_root_is_excluded() -> None:
+    """Structural (v0.10.0): the MG with ``parent_id is None`` — the
+    tenant root — is never eligible for role ``slz`` even when its
+    name substring-matches ``slz`` / ``sovereign`` / ``root``.
+    """
+    findings = _mg_summary([
+        {
+            "id": "root",
+            "displayName": "Sovereign Root",
+            "parent_id": None,
+        },
+        {
+            "id": "alz",
+            "displayName": "Sovereign Landing Zone",
+            "parent_id": "root",
+        },
+        {"id": "platform", "displayName": "platform", "parent_id": "alz"},
+        {"id": "landingzones", "displayName": "Landing Zones", "parent_id": "alz"},
+    ])
+    result = build_heuristic_proposal(findings)
+    assert result["slz"] == "alz"
