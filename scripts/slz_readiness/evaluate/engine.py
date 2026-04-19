@@ -20,7 +20,7 @@ from typing import Any
 
 from .. import _summary, _trace
 from .loaders import Rule, load_all_rules
-from .matchers import _unpack_matcher_result, get_matcher
+from .matchers import _reset_defid_skip_dedupe, _unpack_matcher_result, get_matcher
 from .models import Gap
 
 _ALIAS_FILE = "mg_alias.json"
@@ -93,11 +93,23 @@ def _unknown_gap_from_finding(rule: Rule, finding: dict[str, Any]) -> Gap:
     )
 
 
-def _tally_bump(tally_out: dict[str, Any] | None, *, passed: bool, status: str) -> None:
+def _tally_bump(
+    tally_out: dict[str, Any] | None,
+    *,
+    passed: bool,
+    status: str,
+    vacuous: bool = False,
+) -> None:
     """Bump counters in ``tally_out`` without allocating when ``None``.
 
     The dict is shaped for direct embedding in ``evaluate.summary.json``:
-    ``{rules_evaluated, rules_passed, rules_failed, rules_unknown}``.
+    ``{rules_evaluated, rules_passed, rules_failed, rules_unknown,
+    rules_passed_vacuous}``.
+
+    ``vacuous`` (N1) marks a pass over an empty observation set — the
+    rule fired ``passed=True`` because there was nothing to check. These
+    are excluded from the headline pass count so a sparse tenant does
+    not appear "compliant" against rules that simply had no data.
     """
     if tally_out is None:
         return
@@ -106,6 +118,10 @@ def _tally_bump(tally_out: dict[str, Any] | None, *, passed: bool, status: str) 
         tally_out["rules_unknown"] = tally_out.get("rules_unknown", 0) + 1
     elif passed:
         tally_out["rules_passed"] = tally_out.get("rules_passed", 0) + 1
+        if vacuous:
+            tally_out["rules_passed_vacuous"] = (
+                tally_out.get("rules_passed_vacuous", 0) + 1
+            )
     else:
         tally_out["rules_failed"] = tally_out.get("rules_failed", 0) + 1
 
@@ -132,6 +148,7 @@ def evaluate(
     rules = rules if rules is not None else load_all_rules()
     alias_map = alias_map or {}
     gaps: list[Gap] = []
+    _reset_defid_skip_dedupe()
 
     for rule in sorted(rules, key=lambda r: r.rule_id):
         selector = _apply_alias_to_selector(rule.matcher.get("selector", {}), alias_map)
@@ -196,7 +213,12 @@ def evaluate(
                 passed=passed,
                 status=status,
             )
-            _tally_bump(tally_out, passed=passed, status=status)
+            _tally_bump(
+                tally_out,
+                passed=passed,
+                status=status,
+                vacuous=passed and not observed,
+            )
             if not passed:
                 gaps.append(
                     Gap(
@@ -398,11 +420,19 @@ def _write_evaluate_summary(
             run_id=_summary.run_id_from_path(run_dir),
         )
     )
-    parts.append(
+    vacuous = tally.get("rules_passed_vacuous", 0)
+    real_passes = tally["rules_passed"] - vacuous
+    headline = (
         f"**Gaps:** {len(gaps)} across {findings_count} findings. "
-        f"Rules: {tally['rules_passed']} passed / {tally['rules_failed']} failed / "
+        f"Rules: {real_passes} passed / {tally['rules_failed']} failed / "
         f"{tally['rules_unknown']} unknown of {tally['rules_evaluated']} evaluated."
     )
+    if vacuous:
+        # N1 (slz-demo run 20260419T120215Z): vacuous passes are rules
+        # that returned compliant against an empty observation set. They
+        # inflate the headline pass count and mask sparse coverage.
+        headline += f" ({vacuous} vacuous pass(es) excluded — no observations.)"
+    parts.append(headline)
     parts.append("")
     parts.append("## By severity")
     parts.append("")
@@ -474,9 +504,15 @@ def _write_evaluate_summary(
     parts.append("")
     parts.append("- `gaps.json` — full gap list with baseline citations")
     parts.append("- `trace.jsonl` — `rule.fire` events for every rule evaluated")
-    hint = _brownfield_hint(gaps)
-    if hint is not None:
-        parts.append("")
-        parts.append(hint)
+    # L1 (slz-demo run 20260419T120215Z): suppress the "run /slz-reconcile"
+    # hint when an mg_alias.json already exists in the run directory.
+    # Without the gate, the hint nags the operator after every Evaluate
+    # even though reconcile has already been performed for this run.
+    alias_already_resolved = (run_dir / "mg_alias.json").exists()
+    if not alias_already_resolved:
+        hint = _brownfield_hint(gaps)
+        if hint is not None:
+            parts.append("")
+            parts.append(hint)
     _summary.write_md(run_dir / "evaluate.summary.md", "\n".join(parts))
     _trace.log("evaluate.summary", gap_count=len(gaps), **tally)

@@ -35,7 +35,12 @@ from jsonschema import Draft202012Validator
 from .. import _trace
 from ..evaluate.loaders import BASELINE_DIR
 from ..reconcile import CANONICAL_ROLES
-from .template_registry import ALLOWED_TEMPLATES, RULE_TO_TEMPLATE, TEMPLATE_RUNBOOKS
+from .template_registry import (
+    ALLOWED_TEMPLATES,
+    RULE_TO_TEMPLATE,
+    TEMPLATE_RUNBOOKS,
+    TEMPLATE_SCOPES,
+)
 
 # v0.8.0 Track α — whole-word regex over canonical role names as they
 # appear in `name: '<role>'` string literals inside templates. The
@@ -237,11 +242,12 @@ def _resolve_archetype_assignments(
     identity_count = 0
     audit_rewrite_count = 0
     placeholder_skipped: list[str] = []
+    missing_json_skipped: list[str] = []
     pa_dir = BASELINE_DIR / subtree / "policy_assignments"
     for name in names:
         pa_file = pa_dir / f"{name}.alz_policy_assignment.json"
         if not pa_file.exists():
-            warnings.append(f"Policy assignment JSON missing for '{name}' ({subtree}); skipped")
+            missing_json_skipped.append(name)
             continue
         pa = json.loads(pa_file.read_text(encoding="utf-8"))
         props = pa.get("properties", {})
@@ -275,6 +281,20 @@ def _resolve_archetype_assignments(
                 "parameters": base_params,
                 "identityRequired": identity_required,
             }
+        )
+    if missing_json_skipped:
+        # H3 (slz-demo run 20260419T120215Z): aggregate baseline-integrity
+        # skips into one bucket so 65+ vendored-file misses are not lost
+        # in noise. Distinct from placeholder skips (different remediation).
+        sample = ", ".join(missing_json_skipped[:5])
+        more = f" (+{len(missing_json_skipped) - 5} more)" if len(missing_json_skipped) > 5 else ""
+        warnings.append(
+            f"[archetype-policies] BASELINE-INTEGRITY SKIPPED "
+            f"{len(missing_json_skipped)} assignment(s) — vendored JSON not "
+            f"found under {subtree}/policy_assignments/: {sample}{more}. "
+            "Re-vendor the ALZ baseline with `python -m "
+            "slz_readiness.evaluate.vendor_baseline --sha <new>`, or repin "
+            "the affected rules to the current vendored SHA."
         )
     if rollout_phase == "audit" and audit_rewrite_count:
         warnings.append(
@@ -393,14 +413,23 @@ def _emit(
         "template.emit",
         template=template,
         scope=scope_hint or "tenant",
+        deployment_scope=TEMPLATE_SCOPES.get(template, "managementGroup"),
         bicep=dst_bicep.name,
         rule_ids=sorted(set(rule_ids)),
         rollout_phase=params.get("rolloutPhase"),
     )
     # Use forward slashes for cross-platform consistency in manifests.
+    # ``scope`` is the per-MG filter (e.g. ``corp``, ``landing_zones``) OR
+    # ``"tenant"`` when the template is not per-scope. ``deployment_scope``
+    # is the ARM ``targetScope`` the template declares (``managementGroup``,
+    # ``subscription``, …) and drives the ``az deployment <verb>`` choice
+    # in ``_deploy_commands``. They are DIFFERENT concepts; keeping both
+    # avoids the legacy ambiguity that mis-labelled MG-targeted emissions
+    # as ``"tenant"``. See slz-demo run 20260419T120215Z (finding M1).
     result: dict[str, Any] = {
         "template": template,
         "scope": scope_hint or "tenant",
+        "deployment_scope": TEMPLATE_SCOPES.get(template, "managementGroup"),
         "bicep": dst_bicep.relative_to(out_dir).as_posix(),
         "params": dst_params.relative_to(out_dir).as_posix(),
         "rule_ids": sorted(set(rule_ids)),

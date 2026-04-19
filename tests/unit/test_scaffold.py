@@ -304,9 +304,13 @@ def test_how_to_deploy_is_emitted_with_both_shells(tmp_path: Path) -> None:
     summary = (out_dir / "scaffold.summary.md").read_text(encoding="utf-8")
     assert "```powershell" in summary
     assert "```bash" in summary
-    # Phase C: sovereignty-global-policies uses tenant-root vars, not $mgId.
-    assert "$tenantRootMgId" in summary
-    assert "$TENANT_ROOT_MG_ID" in summary
+    # slz-demo 20260419T120215Z / finding C3: sovereignty-global-policies
+    # targets the SLZ root MG (``$slzRootMgId``), NOT the tenant root. The
+    # previous ``$tenantRootMgId`` binding silently mis-scoped policies one
+    # level too high.
+    assert "$slzRootMgId" in summary
+    assert "$SLZ_ROOT_MG_ID" in summary
+    assert "$tenantRootMgId" not in summary
     # MG-scoped template must include --location (ARM requirement).
     assert '--location "$LOCATION"' in summary
     assert "--location $location" in summary
