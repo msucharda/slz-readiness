@@ -26,19 +26,49 @@ have to enumerate every parameter by hand. The tool derives:
 1. Run `python -m slz_readiness.scaffold.cli --gaps ... --out ...` once
    with NO `--params` flag. The CLI writes
    `artifacts/<run>/scaffold.params.auto.json` containing the merged
-   param set + per-key `derived` / `operator_override` origin.
-2. Show the derived values to the operator via a single `ask_user`
+   param set + per-key `derived` / `operator_override` origin + a
+   `needs_operator_input` list of policy-critical keys prefill could
+   not derive from findings (v0.12.1 — see **Location gate** below).
+2. **Location gate (v0.12.1 — MANDATORY).** Inspect the sidecar's
+   `needs_operator_input` list. If it is non-empty **you MUST** call
+   `ask_user` BEFORE presenting the `accept_defaults` form, with a
+   form that has two distinct fields:
+
+   * `primary_location` — `enum`, single select, drives
+     `archetype-policies.identityLocation`. List the commonly-used
+     Azure regions for the tenant's cloud (e.g. `westeurope`,
+     `northeurope`, `swedencentral`, `germanywestcentral`,
+     `eastus2`, `westus3`, …) and include a free-text fallback only
+     if the discovered region isn't in the list.
+   * `allowed_locations` — `array` of strings (multi-select), drives
+     both `sovereignty-global-policies.listOfAllowedLocations` and
+     `sovereignty-confidential-policies.listOfAllowedLocations`.
+     Must contain `primary_location`; reject and re-ask if it does
+     not (silently permitting deny-all is the failure mode this gate
+     is guarding).
+
+   The `message` field MUST spell out the risk: an empty
+   `listOfAllowedLocations` denies every region under
+   `rolloutPhase=enforce` and flags every resource as non-compliant
+   under `audit`. Write the operator's choice into
+   `artifacts/<run>/scaffold.params.json` and re-run the CLI with
+   `--params`.
+3. Show the derived values to the operator via a single `ask_user`
    form with a boolean field `accept_defaults`. Include the
-   `params_by_template` block verbatim in the form `message`.
-3. If the operator declines, iterate per stem with one `ask_user` per
+   `params_by_template` block verbatim in the form `message`. This
+   step runs AFTER the location gate (step 2) so the form reflects
+   the operator's chosen regions.
+4. If the operator declines, iterate per stem with one `ask_user` per
    template stem whose values they want to tweak. Write the overrides
    to `artifacts/<run>/scaffold.params.json`, then invoke
    `slz-scaffold` again with `--params` pointing at that file.
-4. Operator-supplied keys for `archetype-policies.assignments` are
+5. Operator-supplied keys for `archetype-policies.assignments` are
    stripped with a warning — that field is engine-owned (rebuilt from
    the baseline every run).
 
-Never ask via plain text — always via `ask_user`.
+Never ask via plain text — always via `ask_user`. Never collapse the
+two location fields into a single question; primary vs. allowed have
+different semantics and must be captured independently.
 
 ## Brownfield rewrite gate (v0.8.0)
 

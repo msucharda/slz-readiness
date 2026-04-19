@@ -294,3 +294,154 @@ def test_cli_engine_owned_override_is_stripped_with_warning(tmp_path: Path) -> N
     assert any(
         "archetype-policies.assignments" in w for w in manifest["warnings"]
     ), manifest["warnings"]
+
+
+# -------------------- v0.12.1 location-input surfacing -------------------- #
+
+
+def test_needs_operator_input_keys_flags_all_locations_when_prefill_empty() -> None:
+    from slz_readiness.scaffold.prefill import needs_operator_input_keys
+
+    # No workspaces in findings → modal_region None → no location prefills.
+    prefilled = prefill_params([], [], {"tenant_id": "t"})
+    missing = needs_operator_input_keys(prefilled, {})
+    paths = {(e["template"], e["key"]) for e in missing}
+    assert paths == {
+        ("archetype-policies", "identityLocation"),
+        ("sovereignty-global-policies", "listOfAllowedLocations"),
+        ("sovereignty-confidential-policies", "listOfAllowedLocations"),
+    }
+    for entry in missing:
+        assert entry["reason"] == "modal_region_unavailable"
+
+
+def test_needs_operator_input_keys_empty_when_modal_region_available() -> None:
+    from slz_readiness.scaffold.prefill import needs_operator_input_keys
+
+    prefilled = prefill_params([_WS_FINDING], [], {"tenant_id": "t"})
+    # Modal region derived → all three location keys are present.
+    assert needs_operator_input_keys(prefilled, {}) == []
+
+
+def test_needs_operator_input_keys_respects_operator_override() -> None:
+    """Operator who supplied locations by hand short-circuits the prompt."""
+    from slz_readiness.scaffold.prefill import needs_operator_input_keys
+
+    prefilled = prefill_params([], [], {"tenant_id": "t"})
+    user = {
+        "archetype-policies": {"identityLocation": "eastus2"},
+        "sovereignty-global-policies": {"listOfAllowedLocations": ["eastus2"]},
+        "sovereignty-confidential-policies": {"listOfAllowedLocations": ["eastus2"]},
+    }
+    assert needs_operator_input_keys(prefilled, user) == []
+
+
+def test_needs_operator_input_keys_deterministic_order() -> None:
+    from slz_readiness.scaffold.prefill import needs_operator_input_keys
+
+    missing = needs_operator_input_keys({}, {})
+    assert [(e["template"], e["key"]) for e in missing] == sorted(
+        (e["template"], e["key"]) for e in missing
+    )
+
+
+def test_cli_sidecar_surfaces_needs_operator_input(tmp_path: Path) -> None:
+    """End-to-end: when findings carry no workspace location, the CLI
+    writes needs_operator_input into scaffold.params.auto.json AND
+    prepends a [location-input-required] warning to the manifest.
+    """
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "findings.json").write_text(
+        json.dumps({"run_scope": {"tenant_id": "t"}, "findings": []}),
+        encoding="utf-8",
+    )
+    gaps_path = run_dir / "gaps.json"
+    gaps_path.write_text(
+        json.dumps(
+            {
+                "gaps": [
+                    {
+                        "rule_id": "policy.slz.sovereign_root_policies_applied",
+                        "severity": "high",
+                        "status": "missing",
+                        "resource_id": "tenant",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "out"
+    runner = CliRunner()
+    result = runner.invoke(
+        scaffold_cli.main,
+        ["--gaps", str(gaps_path), "--out", str(out_dir)],
+    )
+    assert result.exit_code == 0, result.output
+
+    auto = json.loads(
+        (out_dir / "scaffold.params.auto.json").read_text(encoding="utf-8")
+    )
+    missing = auto["needs_operator_input"]
+    assert {(e["template"], e["key"]) for e in missing} == {
+        ("archetype-policies", "identityLocation"),
+        ("sovereignty-global-policies", "listOfAllowedLocations"),
+        ("sovereignty-confidential-policies", "listOfAllowedLocations"),
+    }
+
+    manifest = json.loads(
+        (out_dir / "scaffold.manifest.json").read_text(encoding="utf-8")
+    )
+    assert any(
+        "[location-input-required]" in w for w in manifest["warnings"]
+    ), manifest["warnings"]
+
+
+def test_cli_sidecar_empty_needs_operator_input_when_workspaces_present(
+    tmp_path: Path,
+) -> None:
+    """With a workspace carrying location, the sidecar's
+    needs_operator_input is empty and no warning is emitted."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "findings.json").write_text(
+        json.dumps(
+            {"run_scope": {"tenant_id": "t"}, "findings": [_WS_FINDING]}
+        ),
+        encoding="utf-8",
+    )
+    gaps_path = run_dir / "gaps.json"
+    gaps_path.write_text(
+        json.dumps(
+            {
+                "gaps": [
+                    {
+                        "rule_id": "policy.slz.sovereign_root_policies_applied",
+                        "severity": "high",
+                        "status": "missing",
+                        "resource_id": "tenant",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "out"
+    runner = CliRunner()
+    result = runner.invoke(
+        scaffold_cli.main,
+        ["--gaps", str(gaps_path), "--out", str(out_dir)],
+    )
+    assert result.exit_code == 0, result.output
+
+    auto = json.loads(
+        (out_dir / "scaffold.params.auto.json").read_text(encoding="utf-8")
+    )
+    assert auto["needs_operator_input"] == []
+    manifest = json.loads(
+        (out_dir / "scaffold.manifest.json").read_text(encoding="utf-8")
+    )
+    assert not any(
+        "[location-input-required]" in w for w in manifest["warnings"]
+    )

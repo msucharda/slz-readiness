@@ -157,8 +157,14 @@ def test_rewrite_names_on_substitutes_tenant_names(tmp_path: Path) -> None:
     # Original canonical aliased roles are gone.
     assert "name: 'corp'" not in bicep
     assert "name: 'landingzones'" not in bicep
-    # Manifest records the substitution count.
-    assert emitted[0].get("name_substitutions") == 2
+    # tenantResourceId() call sites for aliased roles also rewritten
+    # (v0.12.1): `var landingzonesId = tenantResourceId(..., 'acme-lz')`
+    # so children reference the aliased parent, not the canonical one.
+    assert "tenantResourceId('Microsoft.Management/managementGroups', 'acme-lz')" in bicep
+    assert "tenantResourceId('Microsoft.Management/managementGroups', 'landingzones')" not in bicep
+    # Manifest records the substitution count: 2 `name:` sites
+    # (corp, landingzones) + 1 tenantResourceId site (landingzones) = 3.
+    assert emitted[0].get("name_substitutions") == 3
     # Warning advertises the opt-in.
     assert any("--rewrite-names ON" in w for w in warnings)
 
@@ -254,3 +260,76 @@ def test_greenfield_parity_rewrite_names_with_all_null_alias(tmp_path: Path) -> 
     bicep_on = (out_on / "bicep" / "management-groups.bicep").read_text(encoding="utf-8")
     bicep_off = (out_off / "bicep" / "management-groups.bicep").read_text(encoding="utf-8")
     assert bicep_on == bicep_off
+
+
+# -------------------- v0.12.1 tenantResourceId() rewrite -------------------- #
+
+
+def test_rewrite_names_fixes_tenant_resource_id_parent_refs(tmp_path: Path) -> None:
+    """v0.12.1 regression: when the SLZ root and landing-zones roots are
+    aliased (e.g. ``slz→alz``, ``landingzones→workloads``), both the
+    ``name:`` property AND the ``tenantResourceId(...)`` call that child
+    MGs use to compute parent ids must be rewritten. Otherwise `az
+    deployment mg create` fails with ParentManagementGroupNotFound
+    because `/managementGroups/slz` does not exist on the tenant.
+    """
+    (tmp_path / "mg_alias.json").write_text(
+        json.dumps({"slz": "alz", "landingzones": "workloads"}),
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+    emitted, _ = scaffold_for_gaps(
+        [_gap("mg.slz.hierarchy_shape")],
+        {"management-groups": {"parentManagementGroupId": "tenant-root"}},
+        out,
+        run_dir=tmp_path,
+        rewrite_names=True,
+    )
+    bicep = (out / "bicep" / "management-groups.bicep").read_text(encoding="utf-8")
+
+    # Resource names rewritten.
+    assert "name: 'alz'" in bicep
+    assert "name: 'workloads'" in bicep
+    assert "name: 'slz'" not in bicep
+    assert "name: 'landingzones'" not in bicep
+
+    # tenantResourceId parent-id vars rewritten too — the core of the bug.
+    assert "tenantResourceId('Microsoft.Management/managementGroups', 'alz')" in bicep
+    assert (
+        "tenantResourceId('Microsoft.Management/managementGroups', 'workloads')"
+        in bicep
+    )
+    # Canonical tenantResourceId references must be gone.
+    assert "tenantResourceId('Microsoft.Management/managementGroups', 'slz')" not in bicep
+    assert (
+        "tenantResourceId('Microsoft.Management/managementGroups', 'landingzones')"
+        not in bicep
+    )
+    # Unaliased 'platform' tenantResourceId is untouched.
+    assert (
+        "tenantResourceId('Microsoft.Management/managementGroups', 'platform')" in bicep
+    )
+
+    # Substitution count: 2 `name:` (slz, landingzones) + 2 tenantResourceId
+    # (slz, landingzones). `platform` is unaliased so its tenantResourceId
+    # call is not counted.
+    assert emitted[0].get("name_substitutions") == 4
+
+
+def test_rewrite_names_off_leaves_tenant_resource_id_untouched(tmp_path: Path) -> None:
+    """Negative: with rewrite OFF, the tenantResourceId() calls remain
+    canonical even when a non-null alias map is present."""
+    (tmp_path / "mg_alias.json").write_text(
+        json.dumps({"slz": "alz"}), encoding="utf-8"
+    )
+    out = tmp_path / "out"
+    scaffold_for_gaps(
+        [_gap("mg.slz.hierarchy_shape")],
+        {"management-groups": {"parentManagementGroupId": "tenant-root"}},
+        out,
+        run_dir=tmp_path,
+        rewrite_names=False,
+    )
+    bicep = (out / "bicep" / "management-groups.bicep").read_text(encoding="utf-8")
+    assert "tenantResourceId('Microsoft.Management/managementGroups', 'slz')" in bicep
+    assert "tenantResourceId('Microsoft.Management/managementGroups', 'alz')" not in bicep
