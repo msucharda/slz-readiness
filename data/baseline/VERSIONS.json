@@ -1,7 +1,7 @@
 {
   "plugin": {
-    "version": "0.9.3",
-    "changelog": "v0.9.3 \u2014 Fix flattened MG hierarchy: populate parent_id from az mg show and accept list-shape present_details in reconcile proposer."
+    "version": "0.10.0",
+    "changelog": "v0.10.0 \u2014 Structural enrichment in /slz-reconcile heuristic: parent-chain + children-shape scoring, null-on-tie replaces first-match-wins. Fixes slz -> tenant-root-GUID mis-mapping on SLZ-under-customer-intermediate tenants."
   },
   "_comment": "Baseline source: Azure-Landing-Zones-Library contains both ALZ and SLZ platform trees. Pinned to the latest main commit at implementation start (2026-04-16) and refreshed on a quarterly cadence. Every file in data/baseline/ must match its upstream SHA \u2014 verified by scripts/slz_readiness/evaluate/baseline_integrity.py.",
   "alz_library": {
