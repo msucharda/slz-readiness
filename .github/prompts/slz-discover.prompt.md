@@ -27,8 +27,28 @@ az account tenant list --query "[].{tenantId:tenantId, displayName:displayName, 
 
 Group subscriptions by `tenantId` and remember the per-tenant subscription
 list. Build a lookup from `tenantId` → `(displayName, defaultDomain)` from
-the second call; entries may be absent for tenants the caller is only a
-guest in — that's expected and handled in the next step.
+the second call; entries may be absent (or have `null` fields) for tenants
+the caller is only a guest in, and even some home tenants — `az account
+tenant list` is an experimental command that frequently returns nulls.
+
+**Graph fallback (per tenant id where step above yielded no usable
+`displayName`).** Microsoft Graph exposes basic tenant info to any
+authenticated user via the
+`CrossTenantInformation.ReadBasic.All` scope (granted by default in
+Entra). For each tenant id missing a `displayName`, call:
+
+```bash
+az rest --method GET \
+  --url "https://graph.microsoft.com/v1.0/tenantRelationships/findTenantInformationByTenantId(tenantId='<id>')"
+```
+
+The response shape is `{ "displayName": "...", "defaultDomainName":
+"...", "tenantId": "...", "federationBrandName": null }`. Merge
+`displayName` and `defaultDomainName` into the lookup. The pre-tool-use
+hook permits `az rest --method GET` against `graph.microsoft.com`. If
+the call fails (network, scope, sovereign cloud), record the failure on
+stderr and continue — the next-step compose logic handles the missing
+case.
 
 ## 2. Confirm the target tenant via `ask_user`
 
@@ -40,15 +60,23 @@ currently-active tenant.
 - Title: **"Which Azure tenant should Discover target?"**
 - Enum values: raw `tenantId` GUIDs only (values stay parser-robust).
 - Enum labels (via `enumNames` or `oneOf.title`): compose from the
-  enrichment lookup:
-  - If both `displayName` and `defaultDomain` are present:
+  enrichment lookup, in priority order:
+  - If both `displayName` and `defaultDomain` are present (from either
+    `az account tenant list` or the Graph fallback):
     `"<displayName> (<defaultDomain>) — <tenantId> — <N> subscriptions"`
   - If only `displayName` is present:
     `"<displayName> — <tenantId> — <N> subscriptions"`
-  - Otherwise (guest-only access, missing fields): fall back to
-    `"<tenantId> — <N> subscriptions"`.
-  Never fabricate a display name from the subscription `name` field —
-  that's a subscription name, not a tenant name.
+  - Otherwise — final fallback when both `az account tenant list` and
+    `findTenantInformationByTenantId` failed to yield a `displayName` —
+    emit a **disambiguating subscription-name hint** of the form:
+    `"<tenantId> — <N> subscriptions (e.g. <sub1>, <sub2>)"`
+    where `<sub1>`, `<sub2>` are up to two subscription names from
+    `az account list` for that tenant, lexicographically sorted for
+    stability. The `(e.g. …)` prefix is mandatory — it makes clear
+    these are subscription names, NOT a synthesised tenant display
+    name. If the tenant has only one subscription, list that one;
+    if zero (shouldn't happen — every visible tenant has at least one
+    subscription in `az account list`), drop the parenthetical.
 
 ## 3. Confirm scope mode via `ask_user`
 
