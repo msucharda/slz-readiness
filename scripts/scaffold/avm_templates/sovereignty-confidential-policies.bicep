@@ -19,6 +19,9 @@ param enforcementMode string = 'Default'
 @allowed(['audit', 'enforce'])
 param rolloutPhase string = 'audit'
 
+@description('List of allowed Azure locations. The Confidential baseline assignment (Enforce-Sovereign-Conf) requires this parameter; leaving it at its baseline default of [] produces false non-compliance under audit and denies every non-global region under enforce. Populated by scaffold from the modal region observed in findings; override for multi-region landing zones.')
+param listOfAllowedLocations array
+
 var confidentialPolicySetId = '/providers/Microsoft.Authorization/policySetDefinitions/03de05a4-c324-4ccd-882f-a814ea8ab9ea'
 var effectValue = rolloutPhase == 'enforce' ? 'Deny' : 'Audit'
 
@@ -31,6 +34,7 @@ resource confidentialAssignment 'Microsoft.Authorization/policyAssignments@2024-
     enforcementMode: enforcementMode
     parameters: {
       effect: { value: effectValue }
+      listOfAllowedLocations: { value: listOfAllowedLocations }
     }
   }
 }

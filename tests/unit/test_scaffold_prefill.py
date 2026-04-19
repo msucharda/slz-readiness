@@ -128,7 +128,12 @@ def test_prefill_h2_uses_observed_slz_parent_when_alias_present() -> None:
         alias_map={"slz": "alz"},
     )
     # MUST be the observed parent, NOT the tenant id.
-    assert out["management-groups"] == {"parentManagementGroupId": "sucharda"}
+    # v0.12.0: alz is present in findings AND mapped from canonical slz,
+    # so createSlz is auto-derived as False.
+    assert out["management-groups"] == {
+        "parentManagementGroupId": "sucharda",
+        "createSlz": False,
+    }
 
 
 def test_prefill_h2_falls_back_to_tenant_id_in_greenfield() -> None:

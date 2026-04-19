@@ -14,25 +14,78 @@
 // (or equivalent) is published.
 //
 // Scope: managementGroup. Deploy against the tenant-root MG id (which
-// equals the tenant id). `parent` references stay valid across scopes
-// because they are absolute resource ids.
+// equals the tenant id). `parent` references use computed resource ids
+// (tenantResourceId) rather than resource symbols so that conditional
+// creation (skipping MGs that already exist on the tenant, per
+// brownfield reconciliation) doesn't break symbol resolution.
+//
+// BROWNFIELD NOTE: Every MG has a corresponding createX bool param,
+// defaulted true for greenfield runs. The scaffold engine flips the
+// flag to false when a MG with the same (possibly aliased) name is
+// already present on the tenant — deploying an existing MG would try
+// to re-parent it and trigger ARM error
+// ``ParentManagementGroupCannotBeChanged`` (MG hierarchy is immutable
+// post-creation). See scripts/scaffold/runbooks/brownfield-mg-reparent.md
+// for how to resolve a genuine re-parent need.
 
 targetScope = 'managementGroup'
 
+// --- Display names ---------------------------------------------------------
 @description('Top-level display name for the SLZ management group.')
 param slzDisplayName string = 'Sovereign Landing Zone'
 
+// --- Parent ----------------------------------------------------------------
 @description('Parent management group id (the tenant root MG id is the tenant id).')
 param parentManagementGroupId string
 
-// Management groups mirror the SLZ reference architecture exactly. The
-// scaffold engine fills only the displayName + parent.
+// --- Brownfield createX flags (default true = greenfield) ------------------
+// When false, the MG is assumed to already exist on the tenant and the
+// resource declaration is elided. Children reference the computed id
+// regardless, so the hierarchy still resolves.
+@description('Create the root SLZ MG. Set false if an equivalent MG (possibly aliased, e.g. alz) already exists.')
+param createSlz bool = true
+@description('Create the platform MG under SLZ. Set false if already present.')
+param createPlatform bool = true
+@description('Create the landing zones MG under SLZ. Set false if already present.')
+param createLandingzones bool = true
+@description('Create the sandbox MG under SLZ. Set false if already present.')
+param createSandbox bool = true
+@description('Create the decommissioned MG under SLZ. Set false if already present.')
+param createDecommissioned bool = true
+@description('Create the management MG under platform. Set false if already present.')
+param createManagement bool = true
+@description('Create the connectivity MG under platform. Set false if already present.')
+param createConnectivity bool = true
+@description('Create the identity MG under platform. Set false if already present.')
+param createIdentity bool = true
+@description('Create the security MG under platform. Set false if already present.')
+param createSecurity bool = true
+@description('Create the corp MG under landing zones. Set false if already present.')
+param createCorp bool = true
+@description('Create the online MG under landing zones. Set false if already present.')
+param createOnline bool = true
+@description('Create the public MG under landing zones. Set false if already present.')
+param createPublic bool = true
+@description('Create the confidential_corp MG under landing zones. Set false if already present.')
+param createConfidentialCorp bool = true
+@description('Create the confidential_online MG under landing zones. Set false if already present.')
+param createConfidentialOnline bool = true
+
+// --- Computed MG ids (resolve regardless of createX state) -----------------
+// Every MG id on Azure follows the same well-known path; use it so parent
+// references work whether we create the MG in this deployment or not.
+var slzId = tenantResourceId('Microsoft.Management/managementGroups', 'slz')
+var platformId = tenantResourceId('Microsoft.Management/managementGroups', 'platform')
+var landingzonesId = tenantResourceId('Microsoft.Management/managementGroups', 'landingzones')
+
+// --- Resources -------------------------------------------------------------
 // Every `Microsoft.Management/managementGroups` resource declared in a
 // `targetScope = 'managementGroup'` template must carry `scope: tenant()` —
 // MGs live at tenant scope and the compiler rejects the bare form with
 // BCP135. This mirrors the AVM reference module
 // `avm/res/management/management-group/main.bicep`.
-resource slz 'Microsoft.Management/managementGroups@2023-04-01' = {
+
+resource slz 'Microsoft.Management/managementGroups@2023-04-01' = if (createSlz) {
   scope: tenant()
   name: 'slz'
   properties: {
@@ -41,70 +94,83 @@ resource slz 'Microsoft.Management/managementGroups@2023-04-01' = {
   }
 }
 
-resource platform 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource platform 'Microsoft.Management/managementGroups@2023-04-01' = if (createPlatform) {
   scope: tenant()
   name: 'platform'
-  properties: { displayName: 'Platform', details: { parent: { id: slz.id } } }
+  properties: { displayName: 'Platform', details: { parent: { id: slzId } } }
+  dependsOn: createSlz ? [slz] : []
 }
-resource landingzones 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource landingzones 'Microsoft.Management/managementGroups@2023-04-01' = if (createLandingzones) {
   scope: tenant()
   name: 'landingzones'
-  properties: { displayName: 'Landing zones', details: { parent: { id: slz.id } } }
+  properties: { displayName: 'Landing zones', details: { parent: { id: slzId } } }
+  dependsOn: createSlz ? [slz] : []
 }
-resource sandbox 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource sandbox 'Microsoft.Management/managementGroups@2023-04-01' = if (createSandbox) {
   scope: tenant()
   name: 'sandbox'
-  properties: { displayName: 'Sandbox', details: { parent: { id: slz.id } } }
+  properties: { displayName: 'Sandbox', details: { parent: { id: slzId } } }
+  dependsOn: createSlz ? [slz] : []
 }
-resource decommissioned 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource decommissioned 'Microsoft.Management/managementGroups@2023-04-01' = if (createDecommissioned) {
   scope: tenant()
   name: 'decommissioned'
-  properties: { displayName: 'Decommissioned', details: { parent: { id: slz.id } } }
+  properties: { displayName: 'Decommissioned', details: { parent: { id: slzId } } }
+  dependsOn: createSlz ? [slz] : []
 }
 
-resource management 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource management 'Microsoft.Management/managementGroups@2023-04-01' = if (createManagement) {
   scope: tenant()
   name: 'management'
-  properties: { displayName: 'Management', details: { parent: { id: platform.id } } }
+  properties: { displayName: 'Management', details: { parent: { id: platformId } } }
+  dependsOn: createPlatform ? [platform] : []
 }
-resource connectivity 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource connectivity 'Microsoft.Management/managementGroups@2023-04-01' = if (createConnectivity) {
   scope: tenant()
   name: 'connectivity'
-  properties: { displayName: 'Connectivity', details: { parent: { id: platform.id } } }
+  properties: { displayName: 'Connectivity', details: { parent: { id: platformId } } }
+  dependsOn: createPlatform ? [platform] : []
 }
-resource identity 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource identity 'Microsoft.Management/managementGroups@2023-04-01' = if (createIdentity) {
   scope: tenant()
   name: 'identity'
-  properties: { displayName: 'Identity', details: { parent: { id: platform.id } } }
+  properties: { displayName: 'Identity', details: { parent: { id: platformId } } }
+  dependsOn: createPlatform ? [platform] : []
 }
-resource security 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource security 'Microsoft.Management/managementGroups@2023-04-01' = if (createSecurity) {
   scope: tenant()
   name: 'security'
-  properties: { displayName: 'Security', details: { parent: { id: platform.id } } }
+  properties: { displayName: 'Security', details: { parent: { id: platformId } } }
+  dependsOn: createPlatform ? [platform] : []
 }
 
-resource corp 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource corp 'Microsoft.Management/managementGroups@2023-04-01' = if (createCorp) {
   scope: tenant()
   name: 'corp'
-  properties: { displayName: 'Corp', details: { parent: { id: landingzones.id } } }
+  properties: { displayName: 'Corp', details: { parent: { id: landingzonesId } } }
+  dependsOn: createLandingzones ? [landingzones] : []
 }
-resource online 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource online 'Microsoft.Management/managementGroups@2023-04-01' = if (createOnline) {
   scope: tenant()
   name: 'online'
-  properties: { displayName: 'Online', details: { parent: { id: landingzones.id } } }
+  properties: { displayName: 'Online', details: { parent: { id: landingzonesId } } }
+  dependsOn: createLandingzones ? [landingzones] : []
 }
-resource public 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource public 'Microsoft.Management/managementGroups@2023-04-01' = if (createPublic) {
   scope: tenant()
   name: 'public'
-  properties: { displayName: 'Public', details: { parent: { id: landingzones.id } } }
+  properties: { displayName: 'Public', details: { parent: { id: landingzonesId } } }
+  dependsOn: createLandingzones ? [landingzones] : []
 }
-resource confidentialCorp 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource confidentialCorp 'Microsoft.Management/managementGroups@2023-04-01' = if (createConfidentialCorp) {
   scope: tenant()
   name: 'confidential_corp'
-  properties: { displayName: 'Confidential Corp', details: { parent: { id: landingzones.id } } }
+  properties: { displayName: 'Confidential Corp', details: { parent: { id: landingzonesId } } }
+  dependsOn: createLandingzones ? [landingzones] : []
 }
-resource confidentialOnline 'Microsoft.Management/managementGroups@2023-04-01' = {
+resource confidentialOnline 'Microsoft.Management/managementGroups@2023-04-01' = if (createConfidentialOnline) {
   scope: tenant()
   name: 'confidential_online'
-  properties: { displayName: 'Confidential Online', details: { parent: { id: landingzones.id } } }
+  properties: { displayName: 'Confidential Online', details: { parent: { id: landingzonesId } } }
+  dependsOn: createLandingzones ? [landingzones] : []
 }

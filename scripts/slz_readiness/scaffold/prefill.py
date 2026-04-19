@@ -113,6 +113,78 @@ def _slz_parent_id(
     return None
 
 
+def _present_mg_ids(findings: list[dict[str, Any]]) -> set[str]:
+    """Return the set of MG ``id`` values already present on the tenant.
+
+    Reads ``observed_state.present_details`` from the management-group
+    summary finding — same source as :func:`_slz_parent_id`. Used to
+    derive the ``createX`` flags on the management-groups template so
+    brownfield deploys don't try to re-create (and thereby re-parent)
+    an MG whose parent is immutable.
+    """
+    present: set[str] = set()
+    for f in findings:
+        if f.get("resource_type") != "microsoft.management/managementgroups.summary":
+            continue
+        details = (f.get("observed_state") or {}).get("present_details") or []
+        for d in details:
+            if isinstance(d, dict):
+                mg_id = d.get("id")
+                if isinstance(mg_id, str) and mg_id:
+                    present.add(mg_id)
+    return present
+
+
+# Canonical SLZ MG names → Bicep ``create<Name>`` param keys.
+# Kept in lockstep with ``scripts/scaffold/avm_templates/management-groups.bicep``.
+_CREATE_FLAG_BY_MG: dict[str, str] = {
+    "slz": "createSlz",
+    "platform": "createPlatform",
+    "landingzones": "createLandingzones",
+    "sandbox": "createSandbox",
+    "decommissioned": "createDecommissioned",
+    "management": "createManagement",
+    "connectivity": "createConnectivity",
+    "identity": "createIdentity",
+    "security": "createSecurity",
+    "corp": "createCorp",
+    "online": "createOnline",
+    "public": "createPublic",
+    "confidential_corp": "createConfidentialCorp",
+    "confidential_online": "createConfidentialOnline",
+}
+
+
+def _derive_create_flags(
+    findings: list[dict[str, Any]],
+    alias_map: dict[str, str] | None,
+) -> dict[str, bool]:
+    """Compute the ``createX`` overrides from findings + alias_map.
+
+    For each canonical MG name, look up the effective name on the
+    tenant (alias target if mapped, else canonical). If that name is
+    already present, emit ``createX=false`` so the deploy is a no-op
+    for that MG instead of triggering
+    ``ParentManagementGroupCannotBeChanged``.
+
+    Only *overrides* are returned (i.e. ``False`` flags). Greenfield
+    entries default to ``True`` via the template schema.
+    """
+    present = _present_mg_ids(findings)
+    if not present:
+        return {}
+    alias = alias_map or {}
+    out: dict[str, bool] = {}
+    for canonical, flag in _CREATE_FLAG_BY_MG.items():
+        effective = alias.get(canonical, canonical)
+        # Both the aliased name and the canonical name can legitimately
+        # be present (e.g. an operator already migrated some MGs); skip
+        # create in either case.
+        if effective in present or canonical in present:
+            out[flag] = False
+    return out
+
+
 def prefill_params(
     findings: list[dict[str, Any]],
     gaps: list[dict[str, Any]],  # noqa: ARG001 — reserved for future rule-aware fills
@@ -133,10 +205,17 @@ def prefill_params(
     # is set (greenfield) so existing single-tenant flows still work.
     slz_parent = _slz_parent_id(findings, alias_map)
     tenant_id = run_scope.get("tenant_id")
+    mg_block: dict[str, Any] = {}
     if isinstance(slz_parent, str) and slz_parent:
-        out["management-groups"] = {"parentManagementGroupId": slz_parent}
+        mg_block["parentManagementGroupId"] = slz_parent
     elif isinstance(tenant_id, str) and tenant_id:
-        out["management-groups"] = {"parentManagementGroupId": tenant_id}
+        mg_block["parentManagementGroupId"] = tenant_id
+    # Brownfield safety: flip createX=false for every MG whose (possibly
+    # aliased) name is already present on the tenant. Prevents the
+    # re-parent deploy failure observed in run 20260419T132307Z.
+    mg_block.update(_derive_create_flags(findings, alias_map))
+    if mg_block:
+        out["management-groups"] = mg_block
 
     # log-analytics -------------------------------------------------------
     workspaces = _workspaces_from_findings(findings)
@@ -155,11 +234,15 @@ def prefill_params(
         if la:
             out["log-analytics"] = la
 
-    # archetype-policies.identityLocation + sovereignty-global-policies.listOfAllowedLocations
+    # archetype-policies.identityLocation + sovereignty-*-policies.listOfAllowedLocations
+    # Confidential uses the same modal-region default as Global; leaving it
+    # empty produces false non-compliance under audit and locks out every
+    # non-global region under enforce (see review of run 20260419T132307Z).
     modal = _modal_region(findings)
     if modal:
         out["archetype-policies"] = {"identityLocation": modal}
         out["sovereignty-global-policies"] = {"listOfAllowedLocations": [modal]}
+        out["sovereignty-confidential-policies"] = {"listOfAllowedLocations": [modal]}
 
     return out
 

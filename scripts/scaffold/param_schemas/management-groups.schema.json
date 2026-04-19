@@ -6,6 +6,20 @@
   "required": ["parentManagementGroupId"],
   "properties": {
     "slzDisplayName": { "type": "string", "default": "Sovereign Landing Zone" },
-    "parentManagementGroupId": { "type": "string", "description": "Tenant root MG id (usually tenant id)." }
+    "parentManagementGroupId": { "type": "string", "description": "Tenant root MG id (usually tenant id)." },
+    "createSlz": { "type": "boolean", "default": true },
+    "createPlatform": { "type": "boolean", "default": true },
+    "createLandingzones": { "type": "boolean", "default": true },
+    "createSandbox": { "type": "boolean", "default": true },
+    "createDecommissioned": { "type": "boolean", "default": true },
+    "createManagement": { "type": "boolean", "default": true },
+    "createConnectivity": { "type": "boolean", "default": true },
+    "createIdentity": { "type": "boolean", "default": true },
+    "createSecurity": { "type": "boolean", "default": true },
+    "createCorp": { "type": "boolean", "default": true },
+    "createOnline": { "type": "boolean", "default": true },
+    "createPublic": { "type": "boolean", "default": true },
+    "createConfidentialCorp": { "type": "boolean", "default": true },
+    "createConfidentialOnline": { "type": "boolean", "default": true }
   }
 }

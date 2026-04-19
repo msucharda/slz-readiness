@@ -637,7 +637,9 @@ def test_placeholder_detector_matches_zero_guid_subscription() -> None:
     assert not _contains_placeholder({"value": "A placeholder for future use"})
 
 
-def test_resolve_archetype_skips_placeholder_assignments_by_default(tmp_path: Path, monkeypatch) -> None:
+def test_resolve_archetype_skips_placeholder_assignments_by_default(
+    tmp_path: Path, monkeypatch
+) -> None:
     """Default behaviour (skip-by-default): a baseline assignment whose
     parameters still contain ALZ placeholders (all-zero subscription
     GUIDs, /placeholder/ segments) is SKIPPED — not emitted — and a loud
@@ -733,3 +735,343 @@ def test_resolve_archetype_skips_placeholder_assignments_by_default(tmp_path: Pa
         assert any("Placeholder-DDoS" in w for w in warnings_incl), warnings_incl
     finally:
         eng._SUBTREE_FOR_ARCHETYPE_RULE.pop("archetype.fake_policies_applied", None)
+
+
+# ---------------------------------------------------------------------------
+# v0.12.0 — Phase A remediations (R7 format fallback, R5 conditional LA,
+# R4 trace-only archetype_skip observability).
+# ---------------------------------------------------------------------------
+
+
+def test_warning_scope_fallback_never_emits_empty_colon(tmp_path: Path) -> None:
+    """R7: the per-template warning formatter must never emit ``[tmpl:]``
+    with an empty scope — the nit flagged in the code review of run
+    20260419T132307Z. Non-per-scope templates get ``tenant`` as a
+    substitute so the formatting is never visibly broken.
+    """
+    gaps = [
+        _archetype_gap(
+            "archetype.alz_platform_policies_applied",
+            "tenant",  # aggregate rule: no per-MG scope
+            "platform/alz/archetype_definitions/platform.alz_archetype_definition.json",
+        )
+    ]
+    _emitted, warnings = scaffold_for_gaps(gaps, {}, tmp_path)
+    for w in warnings:
+        assert "[archetype-policies:]" not in w, f"empty-colon token in warning: {w!r}"
+
+
+def test_how_to_deploy_omits_log_analytics_bullet_when_not_emitted(tmp_path: Path) -> None:
+    """R5: the deploy-order section must not reference the log-analytics
+    template when it wasn't emitted (LA workspace already exists and the
+    rule passed). Matches the broken MCAP run 20260419T132307Z output.
+    """
+    from slz_readiness.scaffold.cli import _write_how_to_deploy
+
+    out = tmp_path / "out"
+    out.mkdir()
+    emitted = [
+        {
+            "template": "management-groups",
+            "scope": "",
+            "bicep": "bicep/management-groups.bicep",
+            "params": "params/management-groups.parameters.json",
+            "rollout_phase": None,
+            "rules": ["mg.slz.hierarchy_shape"],
+        },
+        {
+            "template": "sovereignty-global-policies",
+            "scope": "",
+            "bicep": "bicep/sovereignty-global-policies.bicep",
+            "params": "params/sovereignty-global-policies.parameters.json",
+            "rollout_phase": "audit",
+            "rules": ["policy.slz.sovereign_root_policies_applied"],
+        },
+    ]
+    _write_how_to_deploy(out_dir=out, emitted=emitted, run_dir=tmp_path)
+    doc = (out / "how-to-deploy.md").read_text(encoding="utf-8")
+    assert "log-analytics" not in doc.lower(), (
+        "deploy-order mentions log-analytics even though it was not emitted"
+    )
+    # Positive: the actually-emitted templates must be named in the order.
+    assert "management-groups" in doc
+    assert "sovereignty-*-policies" in doc or "sovereignty-global-policies" in doc
+
+
+def test_how_to_deploy_includes_log_analytics_bullet_when_emitted(tmp_path: Path) -> None:
+    """R5 inverse: the bullet DOES appear when log-analytics was emitted."""
+    from slz_readiness.scaffold.cli import _write_how_to_deploy
+
+    out = tmp_path / "out"
+    out.mkdir()
+    emitted = [
+        {
+            "template": "management-groups",
+            "scope": "",
+            "bicep": "bicep/management-groups.bicep",
+            "params": "params/management-groups.parameters.json",
+            "rollout_phase": None,
+            "rules": ["mg.slz.hierarchy_shape"],
+        },
+        {
+            "template": "log-analytics",
+            "scope": "",
+            "bicep": "bicep/log-analytics.bicep",
+            "params": "params/log-analytics.parameters.json",
+            "rollout_phase": None,
+            "rules": ["logging.management_la_workspace_exists"],
+        },
+    ]
+    _write_how_to_deploy(out_dir=out, emitted=emitted, run_dir=tmp_path)
+    doc = (out / "how-to-deploy.md").read_text(encoding="utf-8")
+    assert "log-analytics" in doc
+    assert "rg-slz-management" in doc
+
+
+def test_archetype_skip_trace_event_emitted_for_placeholder(tmp_path: Path, monkeypatch) -> None:
+    """R4: every placeholder-skipped assignment must produce a
+    ``scaffold.archetype_skip`` trace event with
+    ``reason="placeholder"``. Observational only — no behaviour change
+    beyond the existing skip+warn path.
+    """
+    import slz_readiness._trace as trace_mod
+
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        trace_mod, "log", lambda event, **kwargs: captured.append({"event": event, **kwargs})
+    )
+    # Re-import the engine symbol bound to the patched log? `_trace.log`
+    # in engine.py is accessed via attribute lookup each call, so
+    # monkeypatching the module attribute is enough.
+
+    gaps = [
+        _archetype_gap(
+            "archetype.alz_corp_policies_applied",
+            "scope:mg/corp",
+            "platform/alz/archetype_definitions/corp.alz_archetype_definition.json",
+        )
+    ]
+    scaffold_for_gaps(gaps, {}, tmp_path)  # default: skip placeholders
+
+    skips = [c for c in captured if c["event"] == "scaffold.archetype_skip"]
+    assert skips, "expected at least one scaffold.archetype_skip trace event"
+    placeholder_skips = [c for c in skips if c.get("reason") == "placeholder"]
+    assert placeholder_skips, (
+        "expected at least one skip with reason=placeholder; "
+        f"saw reasons={[c.get('reason') for c in skips]}"
+    )
+    for c in placeholder_skips:
+        assert c.get("rule_id") == "archetype.alz_corp_policies_applied"
+        assert c.get("assignment_name")
+        assert c.get("subtree") == "platform/alz"
+
+
+# ---------------------------------------------------------------------------
+# v0.12.0 — Phase B remediations (R2 Confidential listOfAllowedLocations,
+# R3 per-MG fan-out for aggregate-tenant Confidential rules).
+# ---------------------------------------------------------------------------
+
+
+def test_confidential_emits_list_of_allowed_locations(tmp_path: Path) -> None:
+    """R2: the Confidential template requires ``listOfAllowedLocations``.
+    When the operator supplies one (or prefill derives one from findings),
+    it must thread through into the params file.
+    """
+    gaps = [_gap("sovereignty.confidential_corp_policies_applied", "scope:mg/confidential_corp")]
+    emitted, _ = scaffold_for_gaps(
+        gaps,
+        {"sovereignty-confidential-policies": {"listOfAllowedLocations": ["westeurope"]}},
+        tmp_path,
+    )
+    e = next(e for e in emitted if e["template"] == "sovereignty-confidential-policies")
+    params_doc = json.loads((tmp_path / e["params"]).read_text(encoding="utf-8"))
+    assert params_doc["parameters"]["listOfAllowedLocations"]["value"] == ["westeurope"]
+
+
+def test_confidential_warns_when_locations_empty(tmp_path: Path) -> None:
+    """R2: when no ``listOfAllowedLocations`` supplied, emit must succeed
+    with an empty array (mirrors Global behaviour) and surface a loud
+    warning so the operator knows enforce wave will deny every region.
+    """
+    gaps = [_gap("sovereignty.confidential_corp_policies_applied", "scope:mg/confidential_corp")]
+    emitted, warnings = scaffold_for_gaps(gaps, {}, tmp_path)
+    e = next(e for e in emitted if e["template"] == "sovereignty-confidential-policies")
+    params_doc = json.loads((tmp_path / e["params"]).read_text(encoding="utf-8"))
+    assert params_doc["parameters"]["listOfAllowedLocations"]["value"] == []
+    assert any(
+        "sovereignty-confidential-policies" in w and "listOfAllowedLocations" in w
+        for w in warnings
+    ), warnings
+
+
+def test_prefill_confidential_list_of_allowed_locations() -> None:
+    """R2 — prefill.py: modal region from findings populates the
+    Confidential list just like the Global one."""
+    from slz_readiness.scaffold.prefill import prefill_params
+
+    # Findings contain a logging-monitoring finding whose observed_state
+    # carries workspaces[], which is where _modal_region reads locations.
+    findings = [
+        {
+            "rule_id": "logging.management_la_workspace_exists",
+            "resource_type": "microsoft.operationalinsights/workspaces",
+            "observed_state": {
+                "workspaces": [
+                    {"id": "/w1", "location": "westeurope"},
+                    {"id": "/w2", "location": "westeurope"},
+                    {"id": "/w3", "location": "northeurope"},
+                ]
+            },
+        },
+    ]
+    out = prefill_params(findings, [], {})
+    assert out.get("sovereignty-confidential-policies", {}).get("listOfAllowedLocations") == [
+        "westeurope"
+    ]
+    # Global mirror unchanged.
+    assert out.get("sovereignty-global-policies", {}).get("listOfAllowedLocations") == [
+        "westeurope"
+    ]
+
+
+def test_r3_confidential_corp_and_online_fan_out_from_tenant_resource_id(tmp_path: Path) -> None:
+    """R3: both confidential rules use ``aggregate: tenant`` so the
+    evaluate engine emits gaps with ``resource_id="tenant"``. Scaffold
+    must still emit two separate Bicep files (one per MG) by consulting
+    the rule's ``matcher.selector.scope`` override. Root cause of the
+    missing confidential_online emit in run 20260419T132307Z."""
+    gaps = [
+        {
+            "rule_id": "sovereignty.confidential_corp_policies_applied",
+            "severity": "critical",
+            "resource_id": "tenant",  # <-- collapsed by aggregate: tenant
+            "status": "missing",
+        },
+        {
+            "rule_id": "sovereignty.confidential_online_policies_applied",
+            "severity": "critical",
+            "resource_id": "tenant",  # <-- ditto
+            "status": "missing",
+        },
+    ]
+    emitted, _ = scaffold_for_gaps(gaps, {}, tmp_path)
+    conf = [e for e in emitted if e["template"] == "sovereignty-confidential-policies"]
+    # Expect one emit per distinct MG scope, not one combined emit.
+    assert len(conf) == 2, f"expected 2 confidential emits, got {len(conf)}: {conf}"
+    scopes = {e["scope"] for e in conf}
+    assert scopes == {"confidential_corp", "confidential_online"}, scopes
+    # Filenames reflect the scope suffix so operators can deploy each separately.
+    bicep_names = {Path(e["bicep"]).name for e in conf}
+    assert "sovereignty-confidential-policies-confidential_corp.bicep" in bicep_names
+    assert "sovereignty-confidential-policies-confidential_online.bicep" in bicep_names
+
+
+# --- PR-C2/C3 tests: management-groups createX + rewrite_names auto-flip ---
+
+def _mg_summary_finding(present: list[str]) -> dict:
+    """Helper: synthesize a microsoft.management/managementgroups.summary finding."""
+    return {
+        "resource_type": "microsoft.management/managementgroups.summary",
+        "resource_id": "tenant",
+        "scope": "/",
+        "observed_state": {
+            "present_ids": present,
+            "present_details": [{"id": n, "parent_id": None} for n in present],
+        },
+    }
+
+
+def test_prefill_derives_create_flags_from_present_mgs() -> None:
+    """PR-C2: MGs present on the tenant (no alias) produce createX=false."""
+    from slz_readiness.scaffold.prefill import prefill_params
+
+    finding = _mg_summary_finding(["slz", "platform", "landingzones"])
+    out = prefill_params([finding], [], {"tenant_id": "t"}, alias_map=None)
+    mg = out["management-groups"]
+    assert mg.get("createSlz") is False
+    assert mg.get("createPlatform") is False
+    assert mg.get("createLandingzones") is False
+    # Unseen MGs should NOT appear as false (default stays true in schema).
+    assert "createSandbox" not in mg
+    assert "createIdentity" not in mg
+
+
+def test_prefill_derives_create_flags_with_alias_map() -> None:
+    """PR-C2: alias-rewritten names (alz, workloads) present on tenant
+    also flip the canonical createX flag to false."""
+    from slz_readiness.scaffold.prefill import prefill_params
+
+    finding = _mg_summary_finding(["alz", "platform", "workloads"])
+    alias = {"slz": "alz", "platform": "platform", "landingzones": "workloads"}
+    out = prefill_params([finding], [], {"tenant_id": "t"}, alias_map=alias)
+    mg = out["management-groups"]
+    assert mg.get("createSlz") is False, "alz present via slz→alz alias"
+    assert mg.get("createPlatform") is False
+    assert mg.get("createLandingzones") is False, "workloads present via alias"
+
+
+def test_prefill_greenfield_no_create_flags() -> None:
+    """PR-C2: no MG summary finding => only parentManagementGroupId key."""
+    from slz_readiness.scaffold.prefill import prefill_params
+
+    out = prefill_params([], [], {"tenant_id": "t"}, alias_map=None)
+    mg = out["management-groups"]
+    assert mg == {"parentManagementGroupId": "t"}
+
+
+def test_rewrite_names_auto_flips_when_alias_and_brownfield_create_flag(
+    tmp_path: Path,
+) -> None:
+    """PR-C3: default rewrite_names=None auto-enables when mg_alias.json
+    is non-empty AND any createX=false is in management-groups params.
+    This is the brownfield-safety default — without it, the emitted
+    Bicep carries canonical names that don't match the aliased MGs
+    already on the tenant (blocker #2 of run 20260419T132307Z)."""
+    (tmp_path / "mg_alias.json").write_text(
+        json.dumps({"slz": "alz"}), encoding="utf-8"
+    )
+    gaps = [_gap("mg.slz.hierarchy_shape")]
+    params = {"management-groups": {"parentManagementGroupId": "sucharda", "createSlz": False}}
+    emitted, warnings = scaffold_for_gaps(
+        gaps, params, tmp_path, run_dir=tmp_path, rewrite_names=None
+    )
+    # Warning must announce the auto-flip for audit-trail visibility.
+    assert any("rewrite_names auto-enabled" in w for w in warnings), warnings
+    # And the rewrite must have actually run — the emitted Bicep should
+    # carry the tenant name "alz" in place of canonical "slz".
+    bicep_path = tmp_path / "bicep" / "management-groups.bicep"
+    text = bicep_path.read_text(encoding="utf-8")
+    assert "'alz'" in text or "name: 'alz'" in text, (
+        "auto-flip did not substitute canonical 'slz' with aliased 'alz' in Bicep"
+    )
+
+
+def test_rewrite_names_not_flipped_when_alias_but_greenfield(
+    tmp_path: Path,
+) -> None:
+    """PR-C3: alias present but no createX=false (all MGs must be
+    created) => auto-flip stays off. This is the pure-greenfield path."""
+    (tmp_path / "mg_alias.json").write_text(
+        json.dumps({"slz": "alz"}), encoding="utf-8"
+    )
+    gaps = [_gap("mg.slz.hierarchy_shape")]
+    # No createX=false in params.
+    params = {"management-groups": {"parentManagementGroupId": "sucharda"}}
+    _, warnings = scaffold_for_gaps(
+        gaps, params, tmp_path, run_dir=tmp_path, rewrite_names=None
+    )
+    assert not any("rewrite_names auto-enabled" in w for w in warnings), warnings
+
+
+def test_rewrite_names_explicit_false_overrides_auto(tmp_path: Path) -> None:
+    """PR-C3: explicit --no-rewrite-names beats the auto-flip even when
+    brownfield conditions are met."""
+    (tmp_path / "mg_alias.json").write_text(
+        json.dumps({"slz": "alz"}), encoding="utf-8"
+    )
+    gaps = [_gap("mg.slz.hierarchy_shape")]
+    params = {"management-groups": {"parentManagementGroupId": "sucharda", "createSlz": False}}
+    _, warnings = scaffold_for_gaps(
+        gaps, params, tmp_path, run_dir=tmp_path, rewrite_names=False
+    )
+    assert not any("auto-enabled" in w for w in warnings), warnings
