@@ -1,7 +1,7 @@
 {
   "plugin": {
-    "version": "0.10.0",
-    "changelog": "v0.10.0 \u2014 Structural enrichment in /slz-reconcile heuristic: parent-chain + children-shape scoring, null-on-tie replaces first-match-wins. Fixes slz -> tenant-root-GUID mis-mapping on SLZ-under-customer-intermediate tenants."
+    "version": "0.11.0",
+    "changelog": "v0.11.0 \u2014 Fix critical/high/medium/low findings from slz-demo run 20260419T120215Z (C1-C3, H1-H3, M1, L1-L3, N1)"
   },
   "_comment": "Baseline source: Azure-Landing-Zones-Library contains both ALZ and SLZ platform trees. Pinned to the latest main commit at implementation start (2026-04-16) and refreshed on a quarterly cadence. Every file in data/baseline/ must match its upstream SHA \u2014 verified by scripts/slz_readiness/evaluate/baseline_integrity.py.",
   "alz_library": {
