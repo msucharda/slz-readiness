@@ -30,14 +30,24 @@ bypass the structured-confirmation UX and caused a prior regression.
 1. **Tenant enumeration** (shell):
    ```bash
    az account list --query "[].{tenantId:tenantId, subscriptionId:id, subscriptionName:name}" -o json
+   az account tenant list --query "[].{tenantId:tenantId, displayName:displayName, domain:defaultDomain}" -o json
    ```
-   Group by `tenantId`. The subscription `name` field is a subscription
-   name, not a tenant display name — do NOT use it to label tenants.
+   Group subscriptions by `tenantId`. Join the second call on `tenantId`
+   to obtain display names / domains; fields may be absent under
+   guest-only access (handle gracefully). The subscription `name` field
+   is a subscription name, not a tenant display name — never use it to
+   label tenants.
 
 2. **Tenant pick** — `ask_user` with field `tenant_id`, enum of raw
-   `tenantId` GUIDs, labels `"<tenantId> — <N> subscriptions"`. Title:
-   **"Which Azure tenant should Discover target?"**. Do NOT assume the
-   currently-active tenant.
+   `tenantId` GUIDs (values stay parser-robust). Labels (via `enumNames`
+   / `oneOf.title`) compose as:
+   - `"<displayName> (<defaultDomain>) — <tenantId> — <N> subscriptions"`
+     when both enrichment fields are present
+   - `"<displayName> — <tenantId> — <N> subscriptions"` when only
+     `displayName` is present
+   - `"<tenantId> — <N> subscriptions"` when neither is available.
+   Title: **"Which Azure tenant should Discover target?"**. Do NOT
+   assume the currently-active tenant.
 
 3. **Scope mode** — `ask_user` with field `scope_mode`, enum
    `"all"` / `"specific"`. Title: **"Which subscription scope?"**.

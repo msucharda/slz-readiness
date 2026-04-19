@@ -191,6 +191,7 @@ def _resolve_archetype_assignments(
     gap: dict[str, Any],
     *,
     rollout_phase: str,
+    include_placeholders: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Read the archetype JSON + per-assignment JSONs to build the ``assignments`` array.
 
@@ -201,6 +202,13 @@ def _resolve_archetype_assignments(
     When ``rollout_phase == "audit"``, baseline ``Deny`` effect parameter values
     are rewritten to ``Audit`` before emission. Identity type from the baseline
     is propagated via ``identityRequired``.
+
+    ``include_placeholders`` (default False): assignments whose baseline
+    parameters still contain ALZ placeholders (all-zero subscription GUIDs,
+    literal ``/placeholder/`` segments) are **skipped by default** — emitting
+    them makes ``az deployment … create`` what-if fail with opaque validation
+    errors. Set True to emit verbatim (legacy behaviour); a LOUD warning is
+    always added.
     """
     warnings: list[str] = []
     baseline_ref = gap.get("baseline_ref") or {}
@@ -240,12 +248,17 @@ def _resolve_archetype_assignments(
         base_params = props.get("parameters", {}) or {}
         # ALZ baseline ships placeholder values (all-zero subscription GUIDs,
         # literal "/placeholder/" segments) for operator-specific resource ids
-        # — e.g. private-DNS zone IDs in Deploy-Private-DNS-Zones. We keep the
-        # assignment (losing it drops governance) but surface the name so the
-        # operator can fill the values before deploy; skipping silently is the
-        # bug that triggered the "what-if blew up" from session aa4e7b2f.
-        if _contains_placeholder(base_params):
+        # — e.g. private-DNS zone IDs in Deploy-Private-DNS-Zones. Emitting
+        # them verbatim makes `az deployment … what-if` fail with opaque
+        # validation errors (slz-demo run 20260419T070007Z). Default: skip
+        # the assignment entirely and surface the name so the operator can
+        # decide whether to fill the values and re-run with
+        # --include-placeholders, or accept the governance gap.
+        has_placeholder = _contains_placeholder(base_params)
+        if has_placeholder:
             placeholder_skipped.append(name)
+            if not include_placeholders:
+                continue
         if rollout_phase == "audit":
             base_params, n = _downshift_deny_to_audit(base_params)
             audit_rewrite_count += n
@@ -270,15 +283,26 @@ def _resolve_archetype_assignments(
             "after observing compliance data to activate blocking."
         )
     if placeholder_skipped:
-        warnings.append(
-            "[archetype-policies] "
-            f"{len(placeholder_skipped)} assignment(s) contain placeholder "
-            f"parameter value(s) that operators MUST replace before deploy "
-            f"(what-if will fail otherwise): {', '.join(placeholder_skipped)}. "
-            "Typical placeholders: all-zero subscription GUIDs in DDoS protection "
-            "plan IDs and Private DNS zone resource IDs. Edit the emitted "
-            "*.bicepparam / *.parameters.json before running `az deployment ... create`."
-        )
+        if include_placeholders:
+            warnings.append(
+                "[archetype-policies] --include-placeholders ON — emitted "
+                f"{len(placeholder_skipped)} assignment(s) with unresolved "
+                f"placeholder parameter value(s): {', '.join(placeholder_skipped)}. "
+                "Operators MUST replace these (all-zero subscription GUIDs, "
+                "/placeholder/ segments) in the emitted *.parameters.json before "
+                "`az deployment ... create`, or what-if will fail."
+            )
+        else:
+            warnings.append(
+                "[archetype-policies] SKIPPED "
+                f"{len(placeholder_skipped)} assignment(s) containing unresolved "
+                f"baseline placeholders: {', '.join(placeholder_skipped)}. "
+                "Governance coverage is REDUCED until these are resolved. "
+                "Typical placeholders: all-zero subscription GUIDs in DDoS "
+                "protection plan IDs and Private DNS zone resource IDs. To "
+                "emit these assignments anyway (and edit the param files "
+                "by hand), re-run `slz-scaffold` with --include-placeholders."
+            )
     if identity_count:
         warnings.append(
             f"[archetype-policies] {identity_count} assignment(s) require a system-assigned "
@@ -428,6 +452,7 @@ def scaffold_for_gaps(
     *,
     run_dir: Path | None = None,
     rewrite_names: bool = False,
+    include_placeholders: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Write bicep + params files for `gaps`. Returns (emitted, warnings).
 
@@ -502,7 +527,9 @@ def scaffold_for_gaps(
         )
         if tmpl == "archetype-policies":
             assignments, w = _resolve_archetype_assignments(
-                bucket["gap"], rollout_phase=rollout_phase or "audit"
+                bucket["gap"],
+                rollout_phase=rollout_phase or "audit",
+                include_placeholders=include_placeholders,
             )
             warnings.extend(
                 f"[{tmpl}:{scope}] {msg}" if not msg.startswith("[") else msg for msg in w

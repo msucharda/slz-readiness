@@ -12,13 +12,23 @@ wins.
 
 ## 1. Enumerate visible tenants and subscriptions
 
-Run:
+Run the subscription list:
 
 ```bash
 az account list --query "[].{tenantId:tenantId, subscriptionId:id, subscriptionName:name}" -o json
 ```
 
-Group by `tenantId` and remember the per-tenant subscription list.
+Then enrich with tenant display names (best-effort — fields may be missing
+for guest-only access):
+
+```bash
+az account tenant list --query "[].{tenantId:tenantId, displayName:displayName, domain:defaultDomain}" -o json
+```
+
+Group subscriptions by `tenantId` and remember the per-tenant subscription
+list. Build a lookup from `tenantId` → `(displayName, defaultDomain)` from
+the second call; entries may be absent for tenants the caller is only a
+guest in — that's expected and handled in the next step.
 
 ## 2. Confirm the target tenant via `ask_user`
 
@@ -28,12 +38,17 @@ currently-active tenant.
 - Field: `tenant_id`
 - Type: `string` enum
 - Title: **"Which Azure tenant should Discover target?"**
-- Enum values: raw `tenantId` GUIDs only (no composite labels — keeps
-  parsing robust).
-- Enum labels (if the host supports `enumNames` or `oneOf.title`):
-  `"<tenantId> — <N> subscriptions"`. Do NOT synthesise a display name
-  from the subscription `name` field — that's a subscription name, not
-  a tenant name, and will mislead the operator.
+- Enum values: raw `tenantId` GUIDs only (values stay parser-robust).
+- Enum labels (via `enumNames` or `oneOf.title`): compose from the
+  enrichment lookup:
+  - If both `displayName` and `defaultDomain` are present:
+    `"<displayName> (<defaultDomain>) — <tenantId> — <N> subscriptions"`
+  - If only `displayName` is present:
+    `"<displayName> — <tenantId> — <N> subscriptions"`
+  - Otherwise (guest-only access, missing fields): fall back to
+    `"<tenantId> — <N> subscriptions"`.
+  Never fabricate a display name from the subscription `name` field —
+  that's a subscription name, not a tenant name.
 
 ## 3. Confirm scope mode via `ask_user`
 

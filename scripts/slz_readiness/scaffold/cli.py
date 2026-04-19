@@ -10,6 +10,7 @@ import click
 
 from .. import _summary, _trace
 from .engine import ScaffoldError, scaffold_for_gaps
+from .prefill import classify_keys, merge_params, prefill_params, strip_engine_owned_fields
 from .template_registry import RULE_TO_TEMPLATE, TEMPLATE_SCOPES
 
 # Human-readable order the deployment block recommends.
@@ -46,7 +47,11 @@ def _unscaffolded_gaps(gaps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def _deploy_commands(emitted: list[dict[str, Any]]) -> dict[str, list[str]]:
+def _deploy_commands(
+    emitted: list[dict[str, Any]],
+    *,
+    tenant_id: str | None = None,
+) -> dict[str, list[str]]:
     """Build the ``what-if`` + ``create`` command blocks in both Bash and PowerShell.
 
     Returns a dict with keys ``bash`` and ``pwsh``. Both forms use ``az`` CLI
@@ -61,6 +66,13 @@ def _deploy_commands(emitted: list[dict[str, Any]]) -> dict[str, list[str]]:
     mandatory ``--location`` flag (ARM requires it for deployment metadata).
     Mixing these up produces *"target scope X does not match deployment
     scope Y"* at ``what-if`` time — this function's reason for existing.
+
+    ``tenant_id`` (when known) pre-fills the ``$tenantRootMgId`` variable
+    used by ``sovereignty-global-policies`` deployments. That template's
+    ``targetScope`` is the **tenant root** management group (whose id
+    equals the tenant GUID) — NOT the landing-zone MG. Using ``$mgId``
+    there silently mis-scopes the policy. See slz-demo run
+    20260419T070007Z.
     """
     by_order = sorted(
         emitted,
@@ -73,8 +85,18 @@ def _deploy_commands(emitted: list[dict[str, Any]]) -> dict[str, list[str]]:
         TEMPLATE_SCOPES.get(e.get("template", ""), "managementGroup") == "resourceGroup"
         for e in emitted
     )
+    needs_tenant_root = any(
+        e.get("template") == "sovereignty-global-policies" for e in emitted
+    )
+    # Use the observed tenant GUID as the default for $tenantRootMgId (the
+    # tenant-root MG id equals the tenant GUID in Azure). If Discover didn't
+    # record one, emit a placeholder the operator must fill.
+    tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
     bash_lines: list[str] = ['MG_ID="<your-mg-id>"', 'LOCATION="<your-region>"']
     pwsh_lines: list[str] = ['$mgId = "<your-mg-id>"', '$location = "<your-region>"']
+    if needs_tenant_root:
+        bash_lines.append(f'TENANT_ROOT_MG_ID="{tenant_root_default}"')
+        pwsh_lines.append(f'$tenantRootMgId = "{tenant_root_default}"')
     if needs_rg:
         bash_lines.append('RG_NAME="<your-resource-group>"')
         pwsh_lines.append('$rgName = "<your-resource-group>"')
@@ -97,6 +119,17 @@ def _deploy_commands(emitted: list[dict[str, Any]]) -> dict[str, list[str]]:
         elif scope == "tenant":
             bash_head = 'az deployment tenant {verb} --location "$LOCATION"'
             pwsh_head = "az deployment tenant {verb} --location $location"
+        elif template == "sovereignty-global-policies":
+            # Tenant-root scope — MUST NOT use $mgId (which points at the
+            # landing-zone MG); the sovereign baseline binds at tenant root.
+            bash_head = (
+                'az deployment mg {verb} --management-group-id "$TENANT_ROOT_MG_ID" '
+                '--location "$LOCATION"'
+            )
+            pwsh_head = (
+                "az deployment mg {verb} --management-group-id $tenantRootMgId "
+                "--location $location"
+            )
         else:  # managementGroup (default)
             bash_head = (
                 'az deployment mg {verb} --management-group-id "$MG_ID" '
@@ -145,6 +178,7 @@ def _write_how_to_deploy(
     emitted: list[dict[str, Any]],
     run_dir: Path | None = None,
     rewrite_names: bool = False,
+    tenant_id: str | None = None,
 ) -> None:
     """Emit ``how-to-deploy.md`` with Wave-1/Wave-2 recipes in Bash + PowerShell.
 
@@ -154,16 +188,24 @@ def _write_how_to_deploy(
     When ``rewrite_names=True`` and ``mg_alias.json`` is non-empty, the
     emitted Bicep already carries tenant MG names; the alias table is
     replaced with a short "apply-ready" note.
+
+    ``tenant_id`` (when known) pre-fills the ``$tenantRootMgId`` /
+    ``TENANT_ROOT_MG_ID`` variable for ``sovereignty-global-policies``
+    deployments.
     """
     if not emitted:
         return
-    cmds = _deploy_commands(emitted)
+    cmds = _deploy_commands(emitted, tenant_id=tenant_id)
     has_dine = any(e.get("template") in {"archetype-policies"} for e in emitted)
     has_phased = any(e.get("rollout_phase") for e in emitted)
     needs_rg = any(
         TEMPLATE_SCOPES.get(e.get("template", ""), "managementGroup") == "resourceGroup"
         for e in emitted
     )
+    needs_tenant_root = any(
+        e.get("template") == "sovereignty-global-policies" for e in emitted
+    )
+    tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
     mg_runbooks = [
         rb
         for e in emitted
@@ -190,6 +232,51 @@ def _write_how_to_deploy(
     # ``MG_ID`` value to substitute per template scope so per-archetype
     # deployments hit the customer's actual MG, not the canonical SLZ name.
     alias_map = _load_alias_for_doc(run_dir)
+    if alias_map:
+        # v0.9.0 brownfield MG move prerequisite: Bicep cannot re-parent
+        # existing MGs; operators must run ``az account management-group
+        # move`` manually BEFORE ``az deployment mg create`` for each
+        # aliased role. We emit this block whenever a non-empty alias
+        # map is present — regardless of --rewrite-names — because the
+        # move step is orthogonal to name substitution.
+        parts.append("## Prerequisites — brownfield MG moves (read FIRST)")
+        parts.append("")
+        parts.append(
+            "Your `mg_alias.json` maps canonical SLZ roles onto existing "
+            "management groups in your tenant. **Bicep cannot re-parent an "
+            "existing MG** (the `Microsoft.Management/managementGroups` "
+            "resource's `parent` property is immutable once the MG has been "
+            "created). Before running any `az deployment mg create` below, "
+            "confirm each aliased MG sits under the canonical parent the "
+            "template expects. If it does not, run the move explicitly:"
+        )
+        parts.append("")
+        parts.append("```bash")
+        parts.append(
+            "# For each row in the alias table below whose real parent does"
+        )
+        parts.append(
+            "# NOT already equal the canonical parent the template expects:"
+        )
+        parts.append(
+            'az account management-group move \\'
+        )
+        parts.append(
+            '  --group-id "<existing-mg-id>" \\'
+        )
+        parts.append(
+            '  --parent-id "<canonical-parent-mg-id>"'
+        )
+        parts.append("```")
+        parts.append("")
+        parts.append(
+            "Verify with `az account management-group show --name "
+            "<existing-mg-id> --expand --query properties.details.parent` "
+            "before proceeding. Skipping this step causes `az deployment "
+            "mg create` to silently bind policies/role-assignments at the "
+            "wrong scope (they stick to the MG's existing parent chain)."
+        )
+        parts.append("")
     if alias_map and rewrite_names:
         parts.append("## Brownfield retargeting (applied — apply-ready Bicep)")
         parts.append("")
@@ -308,6 +395,11 @@ def _write_how_to_deploy(
     parts.append("az account set --subscription <subscription-id>")
     parts.append("$mgId = \"<your-mg-id>\"")
     parts.append("$location = \"<your-region>\"  # e.g. westeurope")
+    if needs_tenant_root:
+        parts.append(
+            f"$tenantRootMgId = \"{tenant_root_default}\""
+            "  # tenant-root MG id — equals tenant GUID"
+        )
     if needs_rg:
         parts.append("$rgName = \"<your-resource-group>\"")
     parts.append("```")
@@ -318,6 +410,11 @@ def _write_how_to_deploy(
     parts.append("az account set --subscription <subscription-id>")
     parts.append("MG_ID=\"<your-mg-id>\"")
     parts.append("LOCATION=\"<your-region>\"  # e.g. westeurope")
+    if needs_tenant_root:
+        parts.append(
+            f"TENANT_ROOT_MG_ID=\"{tenant_root_default}\""
+            "  # tenant-root MG id — equals tenant GUID"
+        )
     if needs_rg:
         parts.append("RG_NAME=\"<your-resource-group>\"")
     parts.append("```")
@@ -352,7 +449,10 @@ def _write_how_to_deploy(
     parts.append("")
     parts.append("```powershell")
     parts.append("# PowerShell — list top non-compliant resources for the Global policy set")
-    parts.append("az policy state list --management-group $mgId `")
+    if needs_tenant_root:
+        parts.append("az policy state list --management-group $tenantRootMgId `")
+    else:
+        parts.append("az policy state list --management-group $mgId `")
     parts.append(
         "    --filter \"PolicyAssignmentName eq 'Enforce-Sovereign-Global'"
         " and ComplianceState eq 'NonCompliant'\" `"
@@ -362,7 +462,10 @@ def _write_how_to_deploy(
     parts.append("")
     parts.append("```bash")
     parts.append("# Bash")
-    parts.append("az policy state list --management-group \"$MG_ID\" \\")
+    if needs_tenant_root:
+        parts.append("az policy state list --management-group \"$TENANT_ROOT_MG_ID\" \\")
+    else:
+        parts.append("az policy state list --management-group \"$MG_ID\" \\")
     parts.append(
         "    --filter \"PolicyAssignmentName eq 'Enforce-Sovereign-Global'"
         " and ComplianceState eq 'NonCompliant'\" \\"
@@ -685,9 +788,19 @@ def _write_run_rollup(out_dir: Path) -> None:
 @click.option(
     "--params",
     "params_path",
-    required=True,
+    required=False,
+    default=None,
     type=click.Path(exists=True, path_type=Path),
-    help="JSON file: { '<template-stem>': { param: value, ... }, ... }",
+    help=(
+        "JSON file: { '<template-stem>': { param: value, ... }, ... }. "
+        "OPTIONAL since v0.9.0 — when omitted, Scaffold derives "
+        "parameter defaults from findings.json/run_scope via "
+        "prefill_params(). Supplied keys overlay prefilled values at the "
+        "per-template-stem level. Engine-owned keys (e.g. "
+        "archetype-policies.assignments) are always rebuilt from the "
+        "baseline and cannot be overridden — if present in --params they "
+        "are stripped with a warning."
+    ),
 )
 @click.option("--out", "out_dir", required=True, type=click.Path(path_type=Path))
 @click.option(
@@ -702,20 +815,89 @@ def _write_run_rollup(out_dir: Path) -> None:
         "behaviour. Turn ON for apply-ready Bicep in brownfield tenants."
     ),
 )
+@click.option(
+    "--include-placeholders",
+    is_flag=True,
+    default=False,
+    help=(
+        "Emit archetype policy assignments whose baseline parameters still "
+        "contain ALZ placeholders (all-zero subscription GUIDs, /placeholder/ "
+        "segments). Default OFF — such assignments are SKIPPED with a warning, "
+        "because emitting them verbatim makes `az deployment ... create` "
+        "what-if fail with opaque validation errors. Use this flag only when "
+        "you intend to hand-edit the emitted *.parameters.json before deploy."
+    ),
+)
 def main(
-    gaps_path: Path, params_path: Path, out_dir: Path, rewrite_names: bool
+    gaps_path: Path,
+    params_path: Path | None,
+    out_dir: Path,
+    rewrite_names: bool,
+    include_placeholders: bool,
 ) -> None:
     gaps_doc = json.loads(gaps_path.read_text(encoding="utf-8"))
     gaps = gaps_doc.get("gaps", gaps_doc) if isinstance(gaps_doc, dict) else gaps_doc
-    params_by_template = json.loads(params_path.read_text(encoding="utf-8"))
+    user_params: dict[str, dict[str, Any]] = (
+        json.loads(params_path.read_text(encoding="utf-8")) if params_path else {}
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     # v0.7.0: Scaffold reads ``mg_alias.json`` from the gaps file's parent
     # (the canonical artifacts/<run>/ directory). Falls back to out_dir
     # when gaps is supplied from elsewhere.
     run_dir = gaps_path.parent
+    # Pull tenant_id + findings from findings.json (the same run_dir) so
+    # how-to-deploy.md can pre-fill ``$tenantRootMgId`` AND prefill_params()
+    # can derive workspace/region defaults. Silently omit when findings
+    # aren't present (back-compat: callers can invoke Scaffold against a
+    # hand-crafted gaps.json).
+    tenant_id: str | None = None
+    run_scope: dict[str, Any] = {}
+    findings: list[dict[str, Any]] = []
+    findings_path = run_dir / "findings.json"
+    if findings_path.exists():
+        try:
+            fdoc = json.loads(findings_path.read_text(encoding="utf-8"))
+            if isinstance(fdoc, dict):
+                run_scope = fdoc.get("run_scope") or {}
+                if isinstance(run_scope, dict):
+                    tid = run_scope.get("tenant_id")
+                    if isinstance(tid, str) and tid:
+                        tenant_id = tid
+                raw_findings = fdoc.get("findings") or []
+                if isinstance(raw_findings, list):
+                    findings = [f for f in raw_findings if isinstance(f, dict)]
+        except (OSError, json.JSONDecodeError):
+            tenant_id = None
+            run_scope = {}
+            findings = []
+
+    # Phase D: derive defaults, strip engine-owned overrides, merge.
+    prefilled = prefill_params(findings, gaps, run_scope)
+    cleaned_user, engine_owned_warnings = strip_engine_owned_fields(user_params)
+    params_by_template = merge_params(prefilled, cleaned_user)
+    key_origin = classify_keys(prefilled, cleaned_user)
     with _trace.tracer(out_dir, phase="scaffold"):
         _trace.log(
-            "scaffold.begin", gap_count=len(gaps), rewrite_names=rewrite_names
+            "scaffold.begin",
+            gap_count=len(gaps),
+            rewrite_names=rewrite_names,
+            include_placeholders=include_placeholders,
+            prefilled_templates=sorted(prefilled.keys()),
+            operator_params_supplied=params_path is not None,
+        )
+        # Emit scaffold.params.auto.json so the operator can see the final
+        # merged param set + which keys came from prefill vs. their input.
+        (out_dir / "scaffold.params.auto.json").write_text(
+            json.dumps(
+                {
+                    "params_by_template": params_by_template,
+                    "key_origin": key_origin,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
         )
         try:
             emitted, warnings = scaffold_for_gaps(
@@ -724,10 +906,14 @@ def main(
                 out_dir,
                 run_dir=run_dir,
                 rewrite_names=rewrite_names,
+                include_placeholders=include_placeholders,
             )
         except ScaffoldError as exc:
             click.echo(f"SCAFFOLD ERROR: {exc}", err=True)
             sys.exit(2)
+        # Prepend engine-owned override warnings (Phase D) so the summary
+        # surfaces them alongside engine warnings.
+        warnings = list(engine_owned_warnings) + list(warnings)
         _trace.log("scaffold.end", emitted_count=len(emitted), warning_count=len(warnings))
         (out_dir / "scaffold.manifest.json").write_text(
             json.dumps({"emitted": emitted, "warnings": warnings}, indent=2, sort_keys=True) + "\n",
@@ -739,6 +925,7 @@ def main(
             emitted=emitted,
             run_dir=run_dir,
             rewrite_names=rewrite_names,
+            tenant_id=tenant_id,
         )
         _write_run_rollup(out_dir)
     click.echo(f"Emitted {len(emitted)} templates -> {out_dir}")

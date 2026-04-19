@@ -142,6 +142,14 @@ def evaluate(
         # gap for it — the rule's answer is "cannot determine".
         error_findings = [f for f in target_findings if _is_error_finding(f)]
         ok_findings = [f for f in target_findings if not _is_error_finding(f)]
+        # Track (rule_id, resource_id) keys already emitted as `unknown` so
+        # subsequent evaluation branches over the same resource don't also
+        # emit a `missing`/failing gap — "unknown" dominates (we literally
+        # cannot determine compliance, so any downstream status for the same
+        # key is spurious). Fixes the duplicate
+        # `logging.management_la_workspace_exists` (unknown + missing) seen
+        # in the slz-demo 20260419T070007Z run.
+        unknown_keys: set[tuple[str, str]] = set()
         for f in sorted(error_findings, key=lambda f: f.get("resource_id", "")):
             gap = _unknown_gap_from_finding(rule, f)
             _trace.log(
@@ -153,11 +161,20 @@ def evaluate(
             )
             _tally_bump(tally_out, passed=False, status="unknown")
             gaps.append(gap)
+            unknown_keys.add((rule.rule_id, gap.resource_id))
 
         target_findings = ok_findings
 
         # "applies_to_tenant" rules collapse every matching finding into a single gap.
         if rule.matcher.get("aggregate") == "tenant":
+            # If ANY finding in-scope errored, the tenant-wide answer is
+            # unknowable — skip the aggregate branch. Emitting both an
+            # unknown gap (above) and a missing gap (below) for the same
+            # (rule_id, resource_id='tenant') is the root cause of the
+            # scaffold.summary.md "both emitted and not scaffolded"
+            # contradiction observed in the demo run.
+            if error_findings:
+                continue
             observed_list = [f.get("observed_state", {}) for f in target_findings]
             # Unwrap single finding: the rule expects the finding's observation shape directly.
             if len(observed_list) == 1:
@@ -199,6 +216,13 @@ def evaluate(
 
         # Per-resource rules produce one gap per non-compliant resource.
         for f in sorted(target_findings, key=lambda f: f.get("resource_id", "")):
+            resource_id = f.get("resource_id", "")
+            # Skip resources already reported as `unknown` (error finding
+            # emitted above). Prevents duplicate gaps for the same
+            # (rule_id, resource_id) when Discover wrote both an error
+            # and an empty/non-compliant finding for the same resource.
+            if (rule.rule_id, resource_id) in unknown_keys:
+                continue
             matcher_fn = get_matcher(rule.matcher["type"])
             passed, snapshot, status_override = _unpack_matcher_result(
                 matcher_fn(f.get("observed_state"), expected, rule.matcher)

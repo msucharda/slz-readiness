@@ -5,9 +5,40 @@ description: Emit AVM-based Bicep + parameter files for the gaps.
 ---
 
 Invoke the **slz-scaffold** skill. Only templates under
-`scripts/scaffold/avm_templates/` are allowed. Collect parameter values
-from the user via `ask_user` (never plain text), write them to
-`artifacts/<run>/scaffold.params.json`, then run `slz-scaffold`.
+`scripts/scaffold/avm_templates/` are allowed.
+
+## Parameter pre-fill (v0.9.0)
+
+`slz-scaffold` derives parameter defaults from
+`artifacts/<run>/findings.json` automatically — operators no longer
+have to enumerate every parameter by hand. The tool derives:
+
+* `management-groups.parentManagementGroupId` ← `run_scope.tenant_id`
+* `log-analytics.workspaceName` / `location` / `resourceGroupName` ←
+  the first workspace observed (deterministic sort by
+  `(subscriptionId, id)`).
+* `archetype-policies.identityLocation` and
+  `sovereignty-global-policies.listOfAllowedLocations` ← the modal
+  region across observed workspaces (alphabetical tiebreak).
+
+**UX flow:**
+
+1. Run `python -m slz_readiness.scaffold.cli --gaps ... --out ...` once
+   with NO `--params` flag. The CLI writes
+   `artifacts/<run>/scaffold.params.auto.json` containing the merged
+   param set + per-key `derived` / `operator_override` origin.
+2. Show the derived values to the operator via a single `ask_user`
+   form with a boolean field `accept_defaults`. Include the
+   `params_by_template` block verbatim in the form `message`.
+3. If the operator declines, iterate per stem with one `ask_user` per
+   template stem whose values they want to tweak. Write the overrides
+   to `artifacts/<run>/scaffold.params.json`, then invoke
+   `slz-scaffold` again with `--params` pointing at that file.
+4. Operator-supplied keys for `archetype-policies.assignments` are
+   stripped with a warning — that field is engine-owned (rebuilt from
+   the baseline every run).
+
+Never ask via plain text — always via `ask_user`.
 
 ## Brownfield rewrite gate (v0.8.0)
 
