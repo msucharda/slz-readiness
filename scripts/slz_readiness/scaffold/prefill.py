@@ -75,10 +75,50 @@ def _modal_region(findings: Iterable[dict[str, Any]]) -> str | None:
     return tied[0]
 
 
+def _slz_parent_id(
+    findings: list[dict[str, Any]],
+    alias_map: dict[str, str] | None,
+) -> str | None:
+    """Resolve the *actual* parent MG id of the SLZ root.
+
+    Brownfield invariant (slz-demo run 20260419T120215Z, finding H2):
+    the SLZ root MG is often a *child* of an intermediate MG (e.g.
+    ``sucharda``) rather than the tenant root. Defaulting
+    ``parentManagementGroupId`` to the tenant root (the pre-H2
+    behaviour) silently re-parents the SLZ root on first deploy,
+    discarding the intermediate MG.
+
+    Resolution order:
+    1. If ``alias_map["slz"]`` is set, look up that MG's ``parent_id``
+       in ``observed_state.present_details`` from the management-group
+       summary finding.
+    2. Otherwise return ``None`` — the caller MUST treat the field as
+       unknown and emit a placeholder/TODO sentinel rather than
+       defaulting to tenant root.
+    """
+    target = (alias_map or {}).get("slz")
+    if not target:
+        return None
+    for f in findings:
+        if f.get("resource_type") != "microsoft.management/managementgroups.summary":
+            continue
+        details = (f.get("observed_state") or {}).get("present_details") or []
+        for d in details:
+            if not isinstance(d, dict):
+                continue
+            if d.get("id") == target:
+                parent = d.get("parent_id")
+                if isinstance(parent, str) and parent:
+                    return parent
+    return None
+
+
 def prefill_params(
     findings: list[dict[str, Any]],
     gaps: list[dict[str, Any]],  # noqa: ARG001 — reserved for future rule-aware fills
     run_scope: dict[str, Any] | None,
+    *,
+    alias_map: dict[str, str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Derive scaffold parameters from discover findings + run_scope.
 
@@ -88,8 +128,14 @@ def prefill_params(
     run_scope = run_scope or {}
 
     # management-groups ---------------------------------------------------
+    # H2: prefer the OBSERVED parent of the aliased SLZ root over a blind
+    # tenant_id default. Falls through to tenant_id only when no alias
+    # is set (greenfield) so existing single-tenant flows still work.
+    slz_parent = _slz_parent_id(findings, alias_map)
     tenant_id = run_scope.get("tenant_id")
-    if isinstance(tenant_id, str) and tenant_id:
+    if isinstance(slz_parent, str) and slz_parent:
+        out["management-groups"] = {"parentManagementGroupId": slz_parent}
+    elif isinstance(tenant_id, str) and tenant_id:
         out["management-groups"] = {"parentManagementGroupId": tenant_id}
 
     # log-analytics -------------------------------------------------------

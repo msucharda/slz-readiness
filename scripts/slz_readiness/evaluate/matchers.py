@@ -14,10 +14,36 @@ from collections.abc import Callable
 from typing import Any
 
 from .. import _trace
-from .loaders import RuleLoadError, read_baseline_json
+from .loaders import RuleLoadError, load_manifest, read_baseline_json
 from .models import BaselineRef
 
 Matcher = Callable[[Any, Any, dict[str, Any]], tuple[bool, Any] | tuple[bool, Any, str | None]]
+
+
+# L3 (slz-demo run 20260419T120215Z): dedupe defid_load_skip emissions
+# within a single ``evaluate()`` call. The same archetype matcher fires
+# once per rule, but per-assignment failures are identical across reps —
+# without dedupe a sparse baseline produces 5×+ duplicates per missing
+# file, drowning trace.jsonl readers.
+_defid_skip_seen: set[tuple[str, str]] = set()
+
+
+def _reset_defid_skip_dedupe() -> None:
+    """Clear the per-run defid_load_skip dedupe set. Call from evaluate()."""
+    _defid_skip_seen.clear()
+
+
+def _emit_defid_skip(name: str, ref_path: str, reason: str) -> None:
+    key = (ref_path, reason)
+    if key in _defid_skip_seen:
+        return
+    _defid_skip_seen.add(key)
+    _trace.log(
+        "evaluate.defid_load_skip",
+        assignment=name,
+        ref=ref_path,
+        reason=reason,
+    )
 
 
 def _unpack_matcher_result(
@@ -97,32 +123,41 @@ def _load_required_defids(
     Failures (missing file, missing field) silently omit the entry — the
     caller falls back to name-only matching for that assignment, preserving
     pre-v0.7.0 semantics on a partially-vendored baseline.
+
+    L3 (slz-demo run 20260419T120215Z): defid_load_skip events are
+    deduped by ``(ref_path, reason)`` for the lifetime of the process to
+    keep trace.jsonl readable. Call ``_reset_defid_skip_dedupe()`` at the
+    start of each ``evaluate()`` to reset the cache between runs.
     """
-    # archetype_ref.path looks like "platform/alz/archetype_definitions/<name>.alz_archetype_definition.json".
+    # archetype_ref.path looks like
+    # "platform/alz/archetype_definitions/<name>.alz_archetype_definition.json".
     # Subtree = the two leading components ("platform/alz").
     parts = archetype_ref.path.split("/")
     if len(parts) < 4 or parts[-2] != "archetype_definitions":
         return {}
     subtree = "/".join(parts[:-2])
+    # Per-assignment files each have their own distinct git-blob SHAs. Resolve
+    # each one against the manifest (the vendored-tree source of truth) rather
+    # than reusing ``archetype_ref.sha`` — that value is the archetype file's
+    # SHA and would mis-match every policy assignment file, silently emitting
+    # ``defid_load_skip`` for all of them. See slz-demo run 20260419T120215Z.
+    manifest = load_manifest()
     out: dict[str, str] = {}
     for name in required:
+        ref_path = f"{subtree}/policy_assignments/{name}.alz_policy_assignment.json"
+        manifest_entry = manifest.get(ref_path)
+        if manifest_entry is None:
+            _emit_defid_skip(name, ref_path, "RuleLoadError: file not vendored")
+            continue
         ref = BaselineRef(
             source=archetype_ref.source,
-            path=f"{subtree}/policy_assignments/{name}.alz_policy_assignment.json",
-            sha=archetype_ref.sha,
+            path=ref_path,
+            sha=manifest_entry["git_sha"],
         )
         try:
-            doc = read_baseline_json(ref)
+            doc = read_baseline_json(ref, manifest=manifest)
         except (FileNotFoundError, OSError, json.JSONDecodeError, KeyError, RuleLoadError) as exc:
-            # Tolerate a partially-vendored baseline (the rule still works
-            # at name-only granularity); record why we skipped this assignment
-            # so audit trails can show that defid matching was downgraded.
-            _trace.log(
-                "evaluate.defid_load_skip",
-                assignment=name,
-                ref=ref.path,
-                reason=f"{type(exc).__name__}: {exc}",
-            )
+            _emit_defid_skip(name, ref.path, f"{type(exc).__name__}: {exc}")
             continue
         defid = ((doc or {}).get("properties") or {}).get("policyDefinitionId")
         if isinstance(defid, str) and defid:

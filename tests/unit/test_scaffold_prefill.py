@@ -102,6 +102,53 @@ def test_prefill_missing_tenant_and_findings_is_empty() -> None:
     assert prefill_params([], [], None) == {}
 
 
+def test_prefill_h2_uses_observed_slz_parent_when_alias_present() -> None:
+    """H2 (slz-demo run 20260419T120215Z): prefill MUST resolve the SLZ
+    root's actual parent from observed MG hierarchy when alias_map["slz"]
+    is set. Defaulting to tenant_id silently re-parents the SLZ root and
+    discards intermediate MGs the operator already has.
+    """
+    mg_summary = {
+        "resource_type": "microsoft.management/managementgroups.summary",
+        "resource_id": "tenant",
+        "scope": "/",
+        "observed_state": {
+            "present_ids": ["alz", "sucharda", "tenant-root"],
+            "present_details": [
+                {"id": "alz", "displayName": "ALZ", "parent_id": "sucharda"},
+                {"id": "sucharda", "displayName": "Sucharda", "parent_id": "tenant-root"},
+                {"id": "tenant-root", "displayName": "Tenant Root", "parent_id": None},
+            ],
+        },
+    }
+    out = prefill_params(
+        [mg_summary],
+        [],
+        {"tenant_id": "tenant-root"},
+        alias_map={"slz": "alz"},
+    )
+    # MUST be the observed parent, NOT the tenant id.
+    assert out["management-groups"] == {"parentManagementGroupId": "sucharda"}
+
+
+def test_prefill_h2_falls_back_to_tenant_id_in_greenfield() -> None:
+    """No alias => greenfield => tenant_id is the legitimate default."""
+    out = prefill_params([], [], {"tenant_id": "t"}, alias_map=None)
+    assert out["management-groups"] == {"parentManagementGroupId": "t"}
+
+
+def test_prefill_h2_alias_present_but_mg_not_in_findings_falls_back() -> None:
+    """Alias points at a MG we have no observation for -> safe fallback to
+    tenant_id (the engine still emits the param; operator must verify)."""
+    out = prefill_params(
+        [],
+        [],
+        {"tenant_id": "t"},
+        alias_map={"slz": "alz"},
+    )
+    assert out["management-groups"] == {"parentManagementGroupId": "t"}
+
+
 def test_strip_engine_owned_fields_removes_archetype_assignments() -> None:
     cleaned, warnings = strip_engine_owned_fields(
         {

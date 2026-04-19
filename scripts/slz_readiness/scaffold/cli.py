@@ -11,7 +11,7 @@ import click
 from .. import _summary, _trace
 from .engine import ScaffoldError, scaffold_for_gaps
 from .prefill import classify_keys, merge_params, prefill_params, strip_engine_owned_fields
-from .template_registry import RULE_TO_TEMPLATE, TEMPLATE_SCOPES
+from .template_registry import INFORMATIONAL_RULES, RULE_TO_TEMPLATE, TEMPLATE_SCOPES
 
 # Human-readable order the deployment block recommends.
 _DEPLOY_ORDER: list[str] = [
@@ -25,15 +25,35 @@ _DEPLOY_ORDER: list[str] = [
 ]
 
 
-def _unscaffolded_gaps(gaps: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return gaps the scaffold engine refuses to emit Bicep for.
+def _unscaffolded_gaps(
+    gaps: list[dict[str, Any]],
+    emitted: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Return gaps the scaffold engine did NOT emit Bicep for.
 
-    Two buckets (preserved distinctly in the JSON summary):
+    v0.11.0 — now derives the truth from actual emissions, not just template
+    registry membership. The registry says *which* template *would* cover a
+    rule; the emit path may still abort (placeholder-only assignments,
+    no-resolvable-assignments, unknown discovery status, etc.) and those
+    gaps used to be silently marked as scaffolded. See slz-demo run
+    20260419T120215Z (finding C1).
 
-    * ``status == "unknown"`` — discovery couldn't verify; cannot scaffold a
-      fix we can't verify.
-    * no ``RULE_TO_TEMPLATE`` entry — no template covers this rule yet.
+    Reason codes (preserved in the JSON summary):
+
+    * ``"unknown"`` — discovery couldn't verify; cannot scaffold what we
+      can't verify.
+    * ``"informational"`` — rule is in :data:`INFORMATIONAL_RULES` (drift
+      detection only, scaffold intentionally does not auto-remediate).
+    * ``"no_template"`` — no ``RULE_TO_TEMPLATE`` entry for this rule.
+    * ``"emit_skipped"`` — rule maps to a template but no Bicep was
+      emitted for it (template-level abort — see scaffold warnings /
+      trace.jsonl for the per-template reason).
     """
+    emitted_rule_ids: set[str] = {
+        rid
+        for e in (emitted or [])
+        for rid in (e.get("rule_ids") or [])
+    }
     out: list[dict[str, Any]] = []
     for g in gaps:
         rule_id = g.get("rule_id", "")
@@ -41,8 +61,14 @@ def _unscaffolded_gaps(gaps: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if status == "unknown":
             out.append({**g, "_reason": "unknown"})
             continue
+        if rule_id in INFORMATIONAL_RULES:
+            out.append({**g, "_reason": "informational"})
+            continue
         if rule_id not in RULE_TO_TEMPLATE:
             out.append({**g, "_reason": "no_template"})
+            continue
+        if rule_id not in emitted_rule_ids:
+            out.append({**g, "_reason": "emit_skipped"})
     out.sort(key=lambda g: (g.get("rule_id", ""), g.get("resource_id", "")))
     return out
 
@@ -51,6 +77,7 @@ def _deploy_commands(
     emitted: list[dict[str, Any]],
     *,
     tenant_id: str | None = None,
+    alias_map: dict[str, str] | None = None,
 ) -> dict[str, list[str]]:
     """Build the ``what-if`` + ``create`` command blocks in both Bash and PowerShell.
 
@@ -67,13 +94,27 @@ def _deploy_commands(
     Mixing these up produces *"target scope X does not match deployment
     scope Y"* at ``what-if`` time — this function's reason for existing.
 
-    ``tenant_id`` (when known) pre-fills the ``$tenantRootMgId`` variable
-    used by ``sovereignty-global-policies`` deployments. That template's
-    ``targetScope`` is the **tenant root** management group (whose id
-    equals the tenant GUID) — NOT the landing-zone MG. Using ``$mgId``
-    there silently mis-scopes the policy. See slz-demo run
-    20260419T070007Z.
+    ``alias_map`` (when provided) overrides the target MG id for two
+    templates whose canonical scope is NOT the landing-zone MG and is
+    NOT the tenant root:
+
+    * ``sovereignty-global-policies`` -> the ``slz`` alias (sovereign
+      root MG). Without an alias, defaults to ``$MG_ID`` with a loud
+      reminder, NOT the tenant GUID — the previous default silently
+      mis-scoped policies one level too high. See slz-demo run
+      20260419T120215Z (finding C3).
+    * ``sovereignty-confidential-policies`` emissions carry a
+      per-scope hint (``scope=confidential_corp`` or
+      ``confidential_online``) that resolves to the matching alias
+      entry so each confidential archetype lands on the correct MG
+      (finding H1).
+
+    ``tenant_id`` is retained for backwards compatibility with older
+    callers; it is no longer used for sovereign-root targeting because
+    the sovereign root is a *child* of the tenant root, not the tenant
+    root itself.
     """
+    alias_map = alias_map or {}
     by_order = sorted(
         emitted,
         key=lambda e: (
@@ -85,30 +126,56 @@ def _deploy_commands(
         TEMPLATE_SCOPES.get(e.get("template", ""), "managementGroup") == "resourceGroup"
         for e in emitted
     )
-    needs_tenant_root = any(
+    slz_alias = alias_map.get("slz")
+    needs_slz_root = any(
         e.get("template") == "sovereignty-global-policies" for e in emitted
     )
-    # Use the observed tenant GUID as the default for $tenantRootMgId (the
-    # tenant-root MG id equals the tenant GUID in Azure). If Discover didn't
-    # record one, emit a placeholder the operator must fill.
-    tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
     bash_lines: list[str] = ['MG_ID="<your-mg-id>"', 'LOCATION="<your-region>"']
     pwsh_lines: list[str] = ['$mgId = "<your-mg-id>"', '$location = "<your-region>"']
-    if needs_tenant_root:
-        bash_lines.append(f'TENANT_ROOT_MG_ID="{tenant_root_default}"')
-        pwsh_lines.append(f'$tenantRootMgId = "{tenant_root_default}"')
+    if needs_slz_root:
+        slz_default = slz_alias or "<your-slz-root-mg-id>"
+        bash_lines.append(f'SLZ_ROOT_MG_ID="{slz_default}"')
+        pwsh_lines.append(f'$slzRootMgId = "{slz_default}"')
     if needs_rg:
         bash_lines.append('RG_NAME="<your-resource-group>"')
         pwsh_lines.append('$rgName = "<your-resource-group>"')
     bash_lines.append("")
     pwsh_lines.append("")
+
+    # Unused-arg guard (kept for backcompat); explicit to satisfy linters.
+    _ = tenant_id
+
     for e in by_order:
         template = e.get("template", "")
         bicep = e.get("bicep", "")
         params = e.get("params", "")
         phase = e.get("rollout_phase")
         phase_hint = f" (rolloutPhase={phase})" if phase else ""
+        scope_name = e.get("scope") or ""
         scope = TEMPLATE_SCOPES.get(template, "managementGroup")
+
+        # Per-template MG-id variable override. For sovereignty-* templates
+        # we bind to a role-specific MG rather than the generic ``$MG_ID``.
+        mg_bash_var: str | None = None
+        mg_pwsh_var: str | None = None
+        mg_note: str | None = None
+        if template == "sovereignty-global-policies":
+            mg_bash_var = "$SLZ_ROOT_MG_ID"
+            mg_pwsh_var = "$slzRootMgId"
+            if not slz_alias:
+                mg_note = (
+                    "# NOTE: no mg_alias.json entry for `slz`; SLZ_ROOT_MG_ID "
+                    "defaults to a placeholder. Populate it with your "
+                    "sovereign-root MG id (NOT the tenant root)."
+                )
+        elif template == "sovereignty-confidential-policies" and scope_name in alias_map:
+            # The alias value is the customer's actual MG name for this
+            # confidential archetype; inline it so the operator doesn't
+            # have to remember which `$MG_ID` value to reuse per deploy.
+            resolved = alias_map[scope_name]
+            mg_bash_var = f'"{resolved}"'
+            mg_pwsh_var = f'"{resolved}"'
+            mg_note = f"# target MG resolved from mg_alias.json: {scope_name} -> {resolved}"
 
         if scope == "resourceGroup":
             bash_head = 'az deployment group {verb} --resource-group "$RG_NAME"'
@@ -119,28 +186,21 @@ def _deploy_commands(
         elif scope == "tenant":
             bash_head = 'az deployment tenant {verb} --location "$LOCATION"'
             pwsh_head = "az deployment tenant {verb} --location $location"
-        elif template == "sovereignty-global-policies":
-            # Tenant-root scope — MUST NOT use $mgId (which points at the
-            # landing-zone MG); the sovereign baseline binds at tenant root.
-            bash_head = (
-                'az deployment mg {verb} --management-group-id "$TENANT_ROOT_MG_ID" '
-                '--location "$LOCATION"'
-            )
-            pwsh_head = (
-                "az deployment mg {verb} --management-group-id $tenantRootMgId "
-                "--location $location"
-            )
         else:  # managementGroup (default)
+            bash_mg = mg_bash_var if mg_bash_var else '"$MG_ID"'
+            pwsh_mg = mg_pwsh_var if mg_pwsh_var else "$mgId"
             bash_head = (
-                'az deployment mg {verb} --management-group-id "$MG_ID" '
+                f'az deployment mg {{verb}} --management-group-id {bash_mg} '
                 '--location "$LOCATION"'
             )
             pwsh_head = (
-                "az deployment mg {verb} --management-group-id $mgId "
+                f"az deployment mg {{verb}} --management-group-id {pwsh_mg} "
                 "--location $location"
             )
 
         bash_lines.append(f"# {template}{phase_hint} — what-if first, then create")
+        if mg_note:
+            bash_lines.append(mg_note)
         for verb in ("what-if", "create"):
             bash_lines.append(
                 f"{bash_head.format(verb=verb)} \\\n"
@@ -150,6 +210,8 @@ def _deploy_commands(
         bash_lines.append("")
 
         pwsh_lines.append(f"# {template}{phase_hint} — what-if first, then create")
+        if mg_note:
+            pwsh_lines.append(mg_note)
         for verb in ("what-if", "create"):
             pwsh_lines.append(
                 f"{pwsh_head.format(verb=verb)} `\n"
@@ -189,23 +251,33 @@ def _write_how_to_deploy(
     emitted Bicep already carries tenant MG names; the alias table is
     replaced with a short "apply-ready" note.
 
-    ``tenant_id`` (when known) pre-fills the ``$tenantRootMgId`` /
-    ``TENANT_ROOT_MG_ID`` variable for ``sovereignty-global-policies``
-    deployments.
+    ``tenant_id`` is accepted for backwards compatibility but is **not**
+    used for sovereignty-global-policies targeting: the sovereign-root
+    MG is a *child* of the tenant root, so binding there silently
+    over-scopes the policy assignment (slz-demo run 20260419T120215Z,
+    finding C3). The sovereign-root target is resolved from the ``slz``
+    entry of ``mg_alias.json`` via ``_load_alias_for_doc(run_dir)``.
     """
     if not emitted:
         return
-    cmds = _deploy_commands(emitted, tenant_id=tenant_id)
+    # v0.11.0 — pass the alias map through so sovereignty-* templates
+    # bind to the correct MG (slz root + confidential_corp/online)
+    # rather than the tenant root or a generic $MG_ID. Without this,
+    # sovereignty-global-policies silently landed two levels too high.
+    # See slz-demo run 20260419T120215Z (findings C3 + H1).
+    alias_map = _load_alias_for_doc(run_dir)
+    cmds = _deploy_commands(emitted, tenant_id=tenant_id, alias_map=alias_map)
     has_dine = any(e.get("template") in {"archetype-policies"} for e in emitted)
     has_phased = any(e.get("rollout_phase") for e in emitted)
     needs_rg = any(
         TEMPLATE_SCOPES.get(e.get("template", ""), "managementGroup") == "resourceGroup"
         for e in emitted
     )
-    needs_tenant_root = any(
+    needs_slz_root = any(
         e.get("template") == "sovereignty-global-policies" for e in emitted
     )
-    tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
+    slz_alias = alias_map.get("slz")
+    slz_root_default = slz_alias or "<your-slz-root-mg-id>"
     mg_runbooks = [
         rb
         for e in emitted
@@ -231,7 +303,8 @@ def _write_how_to_deploy(
     # ``mg_alias.json`` was loaded by the engine. Tells the operator which
     # ``MG_ID`` value to substitute per template scope so per-archetype
     # deployments hit the customer's actual MG, not the canonical SLZ name.
-    alias_map = _load_alias_for_doc(run_dir)
+    # (``alias_map`` was loaded at the top of this function for the deploy
+    # commands; reused here for the table-of-aliases section.)
     if alias_map:
         # v0.9.0 brownfield MG move prerequisite: Bicep cannot re-parent
         # existing MGs; operators must run ``az account management-group
@@ -395,10 +468,10 @@ def _write_how_to_deploy(
     parts.append("az account set --subscription <subscription-id>")
     parts.append("$mgId = \"<your-mg-id>\"")
     parts.append("$location = \"<your-region>\"  # e.g. westeurope")
-    if needs_tenant_root:
+    if needs_slz_root:
         parts.append(
-            f"$tenantRootMgId = \"{tenant_root_default}\""
-            "  # tenant-root MG id — equals tenant GUID"
+            f"$slzRootMgId = \"{slz_root_default}\""
+            "  # SLZ-root MG id (alias `slz`) — NOT the tenant root"
         )
     if needs_rg:
         parts.append("$rgName = \"<your-resource-group>\"")
@@ -410,10 +483,10 @@ def _write_how_to_deploy(
     parts.append("az account set --subscription <subscription-id>")
     parts.append("MG_ID=\"<your-mg-id>\"")
     parts.append("LOCATION=\"<your-region>\"  # e.g. westeurope")
-    if needs_tenant_root:
+    if needs_slz_root:
         parts.append(
-            f"TENANT_ROOT_MG_ID=\"{tenant_root_default}\""
-            "  # tenant-root MG id — equals tenant GUID"
+            f"SLZ_ROOT_MG_ID=\"{slz_root_default}\""
+            "  # SLZ-root MG id (alias `slz`) — NOT the tenant root"
         )
     if needs_rg:
         parts.append("RG_NAME=\"<your-resource-group>\"")
@@ -449,8 +522,8 @@ def _write_how_to_deploy(
     parts.append("")
     parts.append("```powershell")
     parts.append("# PowerShell — list top non-compliant resources for the Global policy set")
-    if needs_tenant_root:
-        parts.append("az policy state list --management-group $tenantRootMgId `")
+    if needs_slz_root:
+        parts.append("az policy state list --management-group $slzRootMgId `")
     else:
         parts.append("az policy state list --management-group $mgId `")
     parts.append(
@@ -462,8 +535,8 @@ def _write_how_to_deploy(
     parts.append("")
     parts.append("```bash")
     parts.append("# Bash")
-    if needs_tenant_root:
-        parts.append("az policy state list --management-group \"$TENANT_ROOT_MG_ID\" \\")
+    if needs_slz_root:
+        parts.append("az policy state list --management-group \"$SLZ_ROOT_MG_ID\" \\")
     else:
         parts.append("az policy state list --management-group \"$MG_ID\" \\")
     parts.append(
@@ -622,8 +695,10 @@ def _write_scaffold_summary(
     gaps: list[dict[str, Any]],
     emitted: list[dict[str, Any]],
     warnings: list[str],
+    run_dir: Path | None = None,
 ) -> None:
-    unscaffolded = _unscaffolded_gaps(gaps)
+    unscaffolded = _unscaffolded_gaps(gaps, emitted=emitted)
+    alias_map = _load_alias_for_doc(run_dir)
     payload = {
         "phase": "scaffold",
         "gap_count": len(gaps),
@@ -686,9 +761,13 @@ def _write_scaffold_summary(
         parts.append("## Gaps NOT scaffolded")
         parts.append("")
         parts.append(
-            "These gaps did not produce Bicep output. `unknown` gaps require "
-            "elevated discovery; `no_template` gaps need a new entry in "
-            "`scripts/slz_readiness/scaffold/template_registry.py`."
+            "These gaps did not produce Bicep output. Reason codes: "
+            "``unknown`` — discovery couldn't verify; ``informational`` — "
+            "drift-detection rule with no auto-remediation; ``no_template`` "
+            "— no entry in ``template_registry.RULE_TO_TEMPLATE``; "
+            "``emit_skipped`` — rule maps to a template but scaffold "
+            "aborted the emit (see scaffold warnings + ``trace.jsonl`` for "
+            "the per-template reason)."
         )
         parts.append("")
         parts.append(
@@ -716,7 +795,7 @@ def _write_scaffold_summary(
             "(Audit → Observe → Enforce) and DINE remediation role steps."
         )
         parts.append("")
-        cmds = _deploy_commands(emitted)
+        cmds = _deploy_commands(emitted, alias_map=alias_map)
         parts.append("### PowerShell")
         parts.append("")
         parts.append("```powershell")
@@ -750,8 +829,13 @@ def _write_run_rollup(out_dir: Path) -> None:
     Silently skips phases whose summary file is absent (e.g. a fresh run that
     only reached Discover). Idempotent — overwrites on re-run.
     """
+    # Canonical five-phase pipeline. Reconcile was added in v0.7.0 for
+    # brownfield tenants; leaving it out of this list silently dropped the
+    # reconcile.summary.md from run.summary.md regardless of whether it
+    # existed on disk. See slz-demo run 20260419T120215Z.
     sections = [
         ("discover.summary.md", "Discover"),
+        ("reconcile.summary.md", "Reconcile"),
         ("evaluate.summary.md", "Evaluate"),
         ("plan.summary.md", "Plan"),
         ("scaffold.summary.md", "Scaffold"),
@@ -872,7 +956,12 @@ def main(
             findings = []
 
     # Phase D: derive defaults, strip engine-owned overrides, merge.
-    prefilled = prefill_params(findings, gaps, run_scope)
+    # alias_map (when present) lets prefill_params resolve the *real* parent
+    # of the SLZ root for management-groups.parameters (finding H2 — the
+    # tenant_id default would re-parent the SLZ root and discard any
+    # intermediate MGs the operator already has).
+    alias_map = _load_alias_for_doc(run_dir)
+    prefilled = prefill_params(findings, gaps, run_scope, alias_map=alias_map)
     cleaned_user, engine_owned_warnings = strip_engine_owned_fields(user_params)
     params_by_template = merge_params(prefilled, cleaned_user)
     key_origin = classify_keys(prefilled, cleaned_user)
@@ -919,7 +1008,13 @@ def main(
             json.dumps({"emitted": emitted, "warnings": warnings}, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        _write_scaffold_summary(out_dir=out_dir, gaps=gaps, emitted=emitted, warnings=warnings)
+        _write_scaffold_summary(
+            out_dir=out_dir,
+            gaps=gaps,
+            emitted=emitted,
+            warnings=warnings,
+            run_dir=run_dir,
+        )
         _write_how_to_deploy(
             out_dir=out_dir,
             emitted=emitted,
