@@ -18,6 +18,9 @@ pip install -e .[dev]
 ruff check .
 mypy scripts/slz_readiness
 
+# azure cli extensions (preflighted by slz-discover; install once)
+az extension add --name resource-graph
+
 # test (unit only — no live Azure)
 pytest -q
 
