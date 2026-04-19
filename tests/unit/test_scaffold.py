@@ -249,7 +249,13 @@ def test_archetype_marks_dine_assignments_identity_required(tmp_path: Path) -> N
             "platform/alz/archetype_definitions/corp.alz_archetype_definition.json",
         )
     ]
-    emitted, warnings = scaffold_for_gaps(gaps, {}, tmp_path)
+    # Many DINE assignments in the corp archetype (Deploy-Private-DNS-Zones
+    # etc.) ship with placeholder private-DNS-zone IDs. Use
+    # include_placeholders=True so the DINE coverage assertion can see
+    # them; default (skip) is verified elsewhere.
+    emitted, warnings = scaffold_for_gaps(
+        gaps, {}, tmp_path, include_placeholders=True
+    )
     e = emitted[0]
     params_doc = json.loads((tmp_path / e["params"]).read_text(encoding="utf-8"))
     assignments = params_doc["parameters"]["assignments"]["value"]
@@ -298,8 +304,9 @@ def test_how_to_deploy_is_emitted_with_both_shells(tmp_path: Path) -> None:
     summary = (out_dir / "scaffold.summary.md").read_text(encoding="utf-8")
     assert "```powershell" in summary
     assert "```bash" in summary
-    assert "$mgId" in summary
-    assert "$MG_ID" in summary
+    # Phase C: sovereignty-global-policies uses tenant-root vars, not $mgId.
+    assert "$tenantRootMgId" in summary
+    assert "$TENANT_ROOT_MG_ID" in summary
     # MG-scoped template must include --location (ARM requirement).
     assert '--location "$LOCATION"' in summary
     assert "--location $location" in summary
@@ -626,14 +633,14 @@ def test_placeholder_detector_matches_zero_guid_subscription() -> None:
     assert not _contains_placeholder({"value": "A placeholder for future use"})
 
 
-def test_resolve_archetype_warns_on_placeholder_assignments(tmp_path: Path, monkeypatch) -> None:
-    """When a baseline assignment carries a placeholder param value (ALZ ships
-    these on purpose for operator fill-in — e.g. private-DNS zone IDs, DDoS
-    plan IDs), the engine STILL emits the assignment (otherwise governance is
-    silently dropped) but records a loud warning naming it so the operator
-    replaces the value before `az deployment … create`. This is the fix for
-    the "what-if blew up with cryptic error" behaviour observed in session
-    aa4e7b2f."""
+def test_resolve_archetype_skips_placeholder_assignments_by_default(tmp_path: Path, monkeypatch) -> None:
+    """Default behaviour (skip-by-default): a baseline assignment whose
+    parameters still contain ALZ placeholders (all-zero subscription
+    GUIDs, /placeholder/ segments) is SKIPPED — not emitted — and a loud
+    warning names it. Emitting such assignments verbatim made
+    ``az deployment … what-if`` fail with opaque validation errors
+    (slz-demo run 20260419T070007Z). Use ``--include-placeholders`` to
+    restore the legacy "emit verbatim" behaviour."""
     from slz_readiness.scaffold import engine as eng
 
     # Build a fake baseline tree: archetype + one good + one placeholder PA.
@@ -683,7 +690,6 @@ def test_resolve_archetype_warns_on_placeholder_assignments(tmp_path: Path, monk
         encoding="utf-8",
     )
     monkeypatch.setattr(eng, "BASELINE_DIR", baseline_root)
-    # Patch subtree mapping for our synthetic rule id.
     eng._SUBTREE_FOR_ARCHETYPE_RULE["archetype.fake_policies_applied"] = "platform/alz"
     try:
         gap = {
@@ -693,13 +699,33 @@ def test_resolve_archetype_warns_on_placeholder_assignments(tmp_path: Path, monk
             },
             "observed": {"missing": ["Good-Assignment", "Placeholder-DDoS"]},
         }
-        assignments, warnings = eng._resolve_archetype_assignments(gap, rollout_phase="audit")
+        assignments, warnings = eng._resolve_archetype_assignments(
+            gap, rollout_phase="audit"
+        )
+        # Default: placeholder assignment SKIPPED.
+        names = [a["name"] for a in assignments]
+        assert names == ["Good-Assignment"], (
+            f"Default must skip placeholder assignment; got {names}"
+        )
+        assert any(
+            "SKIPPED" in w and "Placeholder-DDoS" in w and "placeholder" in w.lower()
+            for w in warnings
+        ), warnings
+        assert any(
+            "--include-placeholders" in w for w in warnings
+        ), "Warning must point operator at the opt-in flag"
+
+        # Opt-in: legacy "emit verbatim" behaviour preserved.
+        assignments_incl, warnings_incl = eng._resolve_archetype_assignments(
+            gap, rollout_phase="audit", include_placeholders=True
+        )
+        names_incl = [a["name"] for a in assignments_incl]
+        assert set(names_incl) == {"Good-Assignment", "Placeholder-DDoS"}, names_incl
+        assert any(
+            "include-placeholders ON" in w.lower()
+            or ("--include-placeholders on" in w.lower())
+            for w in warnings_incl
+        ), warnings_incl
+        assert any("Placeholder-DDoS" in w for w in warnings_incl), warnings_incl
     finally:
         eng._SUBTREE_FOR_ARCHETYPE_RULE.pop("archetype.fake_policies_applied", None)
-    names = [a["name"] for a in assignments]
-    assert set(names) == {"Good-Assignment", "Placeholder-DDoS"}, (
-        f"Both assignments should be emitted (warning, not skip); got {names}"
-    )
-    assert any(
-        "placeholder" in w.lower() and "Placeholder-DDoS" in w for w in warnings
-    ), warnings
