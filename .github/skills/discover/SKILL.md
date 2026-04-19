@@ -33,19 +33,42 @@ bypass the structured-confirmation UX and caused a prior regression.
    az account tenant list --query "[].{tenantId:tenantId, displayName:displayName, domain:defaultDomain}" -o json
    ```
    Group subscriptions by `tenantId`. Join the second call on `tenantId`
-   to obtain display names / domains; fields may be absent under
-   guest-only access (handle gracefully). The subscription `name` field
-   is a subscription name, not a tenant display name — never use it to
-   label tenants.
+   to obtain display names / domains; fields are frequently absent or
+   `null` (guest-only access, or `account tenant list` is experimental
+   and returns nulls even for some home tenants). The subscription
+   `name` field is a subscription name, not a tenant display name —
+   never use it AS a tenant name; it is permitted only as a clearly-
+   labelled `(e.g. …)` hint at the very end of the fallback chain
+   (see step 2).
+
+   **Graph fallback.** For every tenant id where the previous calls
+   yielded no usable `displayName`, call:
+   ```bash
+   az rest --method GET \
+     --url "https://graph.microsoft.com/v1.0/tenantRelationships/findTenantInformationByTenantId(tenantId='<id>')"
+   ```
+   Returns `displayName` and `defaultDomainName` for any tenant in
+   commercial Entra (`CrossTenantInformation.ReadBasic.All`, granted
+   to all users by default). The pre-tool-use hook permits
+   `az rest --method GET` against `graph.microsoft.com`. Merge the
+   result into the enrichment lookup. If the call fails (network,
+   scope, sovereign cloud), continue silently — the compose logic
+   in step 2 has a final hint fallback.
 
 2. **Tenant pick** — `ask_user` with field `tenant_id`, enum of raw
    `tenantId` GUIDs (values stay parser-robust). Labels (via `enumNames`
-   / `oneOf.title`) compose as:
+   / `oneOf.title`) compose in priority order:
    - `"<displayName> (<defaultDomain>) — <tenantId> — <N> subscriptions"`
-     when both enrichment fields are present
+     when both enrichment fields are present (from CLI or Graph)
    - `"<displayName> — <tenantId> — <N> subscriptions"` when only
      `displayName` is present
-   - `"<tenantId> — <N> subscriptions"` when neither is available.
+   - `"<tenantId> — <N> subscriptions (e.g. <sub1>, <sub2>)"` as the
+     final fallback when both `az account tenant list` and
+     `findTenantInformationByTenantId` returned nothing usable.
+     `<sub1>`, `<sub2>` are up to two subscription names for that
+     tenant from `az account list`, lexicographically sorted. The
+     `(e.g. …)` prefix is mandatory — these are subscription names,
+     never synthesised tenant display names.
    Title: **"Which Azure tenant should Discover target?"**. Do NOT
    assume the currently-active tenant.
 
