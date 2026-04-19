@@ -42,8 +42,9 @@ def present_mg_ids() -> list[str]:
 def _collect_present_details(mgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return ``[{id, displayName, parent_id}, ...]`` sorted by id.
 
-    Uses one ``show`` per MG to resolve ``properties.details.parent.id``
-    — the flat ``list`` output does not carry parent information.
+    Uses one ``show`` per MG to resolve ``details.parent`` (top-level on the
+    real Azure CLI response — there is no ``properties`` wrapper). The flat
+    ``list`` output does not carry parent information.
     Staleness caveat: RG would be faster but can lag up to 15 min on MG
     moves; given Discover is read-only, the worst case is a stale
     suggestion in how-to-deploy.md, which the operator verifies manually.
@@ -57,7 +58,7 @@ def _collect_present_details(mgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         parent_id: str | None = None
         shown = _show_mg(name)
         if isinstance(shown, dict):
-            parent = (shown.get("properties") or {}).get("details", {}).get("parent") or {}
+            parent = (shown.get("details") or {}).get("parent") or {}
             if isinstance(parent, dict):
                 p_name = parent.get("name") or parent.get("id", "").rsplit("/", 1)[-1] or None
                 if p_name:
