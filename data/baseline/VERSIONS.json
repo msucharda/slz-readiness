@@ -1,7 +1,7 @@
 {
   "plugin": {
-    "version": "0.12.0",
-    "changelog": "v0.12.0 \u2014 Brownfield MG safety: createX conditional flags, confidential fan-out with listOfAllowedLocations, rewrite_names tri-state auto-flip, brownfield-mg-reparent runbook. Fixes R1-R7 from code review of run 20260419T132307Z."
+    "version": "0.12.1",
+    "changelog": "v0.12.1 \u2014 fix(scaffold): rewrite tenantResourceId MG parent refs; mandatory location gate for sovereignty policies"
   },
   "_comment": "Baseline source: Azure-Landing-Zones-Library contains both ALZ and SLZ platform trees. Pinned to the latest main commit at implementation start (2026-04-16) and refreshed on a quarterly cadence. Every file in data/baseline/ must match its upstream SHA \u2014 verified by scripts/slz_readiness/evaluate/baseline_integrity.py.",
   "alz_library": {
