@@ -4,4 +4,4 @@ Strictly read-only, deterministic-by-default. LLM is used only in the Plan and
 Scaffold phases; Discover and Evaluate are pure Python over vendored baseline.
 """
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
