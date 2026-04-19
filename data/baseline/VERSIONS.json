@@ -1,7 +1,7 @@
 {
   "plugin": {
-    "version": "0.9.0",
-    "changelog": "v0.9.0 \u2014 research-report fixes: evaluate dedupe, placeholder-assignment skip, sovereignty-global-policies tenant-root scope, scaffold prefill from findings, brownfield MG-move guidance, tenant display-name labels."
+    "version": "0.9.1",
+    "changelog": "v0.9.1 \u2014 Preflight required az extensions (resource-graph); classify missing-extension errors distinctly."
   },
   "_comment": "Baseline source: Azure-Landing-Zones-Library contains both ALZ and SLZ platform trees. Pinned to the latest main commit at implementation start (2026-04-16) and refreshed on a quarterly cadence. Every file in data/baseline/ must match its upstream SHA \u2014 verified by scripts/slz_readiness/evaluate/baseline_integrity.py.",
   "alz_library": {
