@@ -22,6 +22,13 @@ from . import (
 )
 from .az_common import AzError, run_az
 
+# Non-core az CLI extensions the discover pipeline depends on. Each must be
+# present locally before the run starts — otherwise the first call that needs
+# it fails mid-run with a generic error that silently masks the real cause.
+REQUIRED_EXTENSIONS: tuple[str, ...] = (
+    "resource-graph",  # used by discover/logging_monitoring.py (az graph query)
+)
+
 DISCOVERERS = [
     mg_hierarchy,
     subscription_inventory,
@@ -71,6 +78,29 @@ def _resolve_active_tenant() -> str | None:
     if isinstance(info, dict):
         return info.get("tenantId")
     return None
+
+
+def _check_required_extensions() -> list[str]:
+    """Return the names of required az extensions that are not installed.
+
+    Uses the read-only ``az extension list`` verb. If the listing itself fails
+    (auth, CLI not on PATH) we treat the installed set as empty so the
+    preflight still reports the missing extensions — better to surface a
+    possibly-false-positive than to let the real mid-run failure hide behind
+    a ``kind=network`` trace line.
+    """
+    try:
+        exts = run_az(["extension", "list"])
+    except AzError:
+        exts = []
+    installed: set[str] = set()
+    if isinstance(exts, list):
+        for ext in exts:
+            if isinstance(ext, dict):
+                name = ext.get("name")
+                if isinstance(name, str):
+                    installed.add(name)
+    return [name for name in REQUIRED_EXTENSIONS if name not in installed]
 
 
 def _list_tenant_subscriptions(tenant_id: str) -> list[str]:
@@ -140,6 +170,15 @@ def main(
         raise click.ClickException(
             f"Active az tenant is {active_tenant}, but --tenant was {tenant_id}. "
             f"Run `az login --tenant {tenant_id}` and retry."
+        )
+
+    missing_exts = _check_required_extensions()
+    if missing_exts:
+        names = ", ".join(missing_exts)
+        add_cmd = " ".join(f"az extension add --name {n}" for n in missing_exts)
+        raise click.ClickException(
+            f"Missing required az CLI extension(s): {names}. "
+            f"Install with: {add_cmd}"
         )
 
     if all_subscriptions:

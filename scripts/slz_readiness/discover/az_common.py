@@ -75,10 +75,11 @@ class AzError(RuntimeError):
 
     ``kind`` classifies the failure for the unknown-severity pipeline:
 
-    * ``permission_denied`` — 403 / Authorization / AuthorizationFailed
-    * ``not_found``         — 404 / ResourceNotFound / MG missing
-    * ``rate_limited``      — 429 / TooManyRequests / RateLimit
-    * ``network``           — any other non-zero with no stderr classification
+    * ``permission_denied``  — 403 / Authorization / AuthorizationFailed
+    * ``not_found``          — 404 / ResourceNotFound / MG missing
+    * ``rate_limited``       — 429 / TooManyRequests / RateLimit
+    * ``missing_extension``  — required az CLI extension not installed
+    * ``network``            — any other non-zero with no stderr classification
     """
 
     def __init__(self, kind: str, cmd: list[str], stderr: str) -> None:
@@ -90,6 +91,15 @@ class AzError(RuntimeError):
 
 def _classify(stderr: str, returncode: int) -> str:
     s = stderr.lower()
+    # Must match before ``not_found`` because the extension-missing message from
+    # the az CLI ("The command requires the extension ...") also contains the
+    # substring "command group ... is not" on some locales.
+    if (
+        "requires the extension" in s
+        or "is misspelled or not recognized" in s
+        or "no tty available" in s and "extension" in s
+    ):
+        return "missing_extension"
     if "forbidden" in s or "authorizationfailed" in s or "does not have authorization" in s:
         return "permission_denied"
     if "notfound" in s or "not found" in s or "was not found" in s:
