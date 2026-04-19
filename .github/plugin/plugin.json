@@ -1,6 +1,6 @@
 {
   "name": "slz-readiness",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Audit an Azure tenant for Sovereign Landing Zone readiness against a vendored, SHA-pinned Cloud Adoption Framework baseline. Read-only discovery, deterministic evaluation, AVM-based Bicep scaffolding.",
   "author": {
     "name": "msucharda"
