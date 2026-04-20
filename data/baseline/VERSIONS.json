@@ -1,7 +1,7 @@
 {
   "plugin": {
-    "version": "0.14.1",
-    "changelog": "v0.14.1 \u2014 Fix Graph tenant-info fallback on Windows shells (percent-encode OData quotes)"
+    "version": "0.14.2",
+    "changelog": "v0.14.2 \u2014 Document 'python -m slz_readiness.<phase>.cli' as the canonical CLI invocation (avoids PATH-dependent console-script shim failures on Windows PowerShell)."
   },
   "_comment": "Baseline source: Azure-Landing-Zones-Library contains both ALZ and SLZ platform trees. Pinned to the latest main commit at implementation start (2026-04-16) and refreshed on a quarterly cadence. Every file in data/baseline/ must match its upstream SHA \u2014 verified by scripts/slz_readiness/evaluate/baseline_integrity.py.",
   "alz_library": {
