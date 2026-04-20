@@ -10,7 +10,7 @@ jobs:
   pack-plugin:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install APM
         run: curl -sSL https://aka.ms/apm-unix | sh
       - name: Pack as standard plugin
