@@ -80,6 +80,48 @@ def _unscaffolded_gaps(
     return out
 
 
+def _needs_generic_mg(
+    by_order: list[dict[str, Any]], alias_map: dict[str, str]
+) -> bool:
+    """True when some MG-scoped emission falls through to the generic ``$MG_ID``.
+
+    Mirrors the per-template MG-var resolution used by the runbook renderer
+    in ``deploy_script.py:_plan_steps``. Both modules must agree: if this
+    returns False, neither the runbook nor the ``how-to-deploy.md``
+    prerequisites block should declare the generic ``MG_ID`` / ``$mgId``
+    variable (emitting it unused trips the placeholder guard — slz-demo
+    run 20260420T195152Z).
+
+    The templates that bind to a dedicated MG var and therefore do NOT
+    need the generic one: ``management-groups`` (tenant root),
+    ``alz-policy-definitions`` / ``sovereignty-global-policies`` (SLZ root),
+    ``archetype-policies`` (literal archetype MG name), and
+    ``sovereignty-confidential-policies`` when its per-scope hint
+    (``confidential_corp`` / ``confidential_online``) resolves via
+    ``alias_map``. Everything else (policy-assignment, role-assignment,
+    confidential-policies without alias) still uses ``$MG_ID``.
+    """
+    for e in by_order:
+        template = e.get("template", "")
+        scope = TEMPLATE_SCOPES.get(template, "managementGroup")
+        if scope != "managementGroup":
+            continue
+        if template in {
+            "sovereignty-global-policies",
+            "alz-policy-definitions",
+            "archetype-policies",
+            "management-groups",
+        }:
+            continue
+        if (
+            template == "sovereignty-confidential-policies"
+            and (e.get("scope") or "") in alias_map
+        ):
+            continue
+        return True
+    return False
+
+
 def _deploy_commands(
     emitted: list[dict[str, Any]],
     *,
@@ -139,23 +181,30 @@ def _deploy_commands(
         for e in emitted
     )
     needs_tenant_root = any(e.get("template") == "management-groups" for e in emitted)
-    bash_lines: list[str] = ['MG_ID="<your-mg-id>"', 'LOCATION="<your-region>"']
-    pwsh_lines: list[str] = ['$mgId = "<your-mg-id>"', '$location = "<your-region>"']
+    needs_generic_mg = _needs_generic_mg(by_order, alias_map)
+    bash_lines: list[str] = []
+    pwsh_lines: list[str] = []
+    if needs_generic_mg:
+        bash_lines.append('MG_ID="<your-mg-id>"')
+        pwsh_lines.append('$mgId = "<your-mg-id>"')
+    bash_lines.append('LOCATION="<your-region>"')
+    pwsh_lines.append('$location = "<your-region>"')
     if needs_slz_root:
         slz_default = slz_alias or "<your-slz-root-mg-id>"
         bash_lines.append(f'SLZ_ROOT_MG_ID="{slz_default}"')
         pwsh_lines.append(f'$slzRootMgId = "{slz_default}"')
     if needs_tenant_root:
-        bash_lines.append('TENANT_ROOT_MG_ID="<your-tenant-root-mg-id>"')
-        pwsh_lines.append('$tenantRootMgId = "<your-tenant-root-mg-id>"')
+        tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
+        bash_lines.append(f'TENANT_ROOT_MG_ID="{tenant_root_default}"')
+        pwsh_lines.append(f'$tenantRootMgId = "{tenant_root_default}"')
     if needs_rg:
         bash_lines.append('RG_NAME="<your-resource-group>"')
         pwsh_lines.append('$rgName = "<your-resource-group>"')
     bash_lines.append("")
     pwsh_lines.append("")
 
-    # Unused-arg guard (kept for backcompat); explicit to satisfy linters.
-    _ = tenant_id
+    # Unused-arg guard removed in v0.14.x — tenant_id is now honoured above
+    # as the TENANT_ROOT_MG_ID default when known.
 
     for e in by_order:
         template = e.get("template", "")
@@ -325,6 +374,19 @@ def _write_how_to_deploy(
     needs_tenant_root = any(
         e.get("template") == "management-groups" for e in emitted
     )
+    # Keep the prerequisites block in lockstep with the runbook and the
+    # command loop: only declare ``$mgId`` / ``MG_ID`` when some step
+    # actually references it, else the preflight placeholder guard trips
+    # on an unused default (slz-demo run 20260420T195152Z).
+    _by_order = sorted(
+        emitted,
+        key=lambda e: (
+            _DEPLOY_ORDER.index(e["template"]) if e["template"] in _DEPLOY_ORDER else 99,
+            e.get("scope", ""),
+        ),
+    )
+    needs_generic_mg = _needs_generic_mg(_by_order, alias_map)
+    tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
     slz_alias = alias_map.get("slz")
     slz_root_default = slz_alias or "<your-slz-root-mg-id>"
     mg_runbooks = [
@@ -573,7 +635,8 @@ def _write_how_to_deploy(
     parts.append("# PowerShell")
     parts.append("az login --tenant <tenant-id>")
     parts.append("az account set --subscription <subscription-id>")
-    parts.append("$mgId = \"<your-mg-id>\"")
+    if needs_generic_mg:
+        parts.append("$mgId = \"<your-mg-id>\"")
     parts.append("$location = \"<your-region>\"  # e.g. westeurope")
     if needs_slz_root:
         parts.append(
@@ -582,7 +645,7 @@ def _write_how_to_deploy(
         )
     if needs_tenant_root:
         parts.append(
-            "$tenantRootMgId = \"<your-tenant-root-mg-id>\""
+            f"$tenantRootMgId = \"{tenant_root_default}\""
             "  # parent of the SLZ root; used only by the management-groups template"
         )
     if needs_rg:
@@ -593,7 +656,8 @@ def _write_how_to_deploy(
     parts.append("# Bash")
     parts.append("az login --tenant <tenant-id>")
     parts.append("az account set --subscription <subscription-id>")
-    parts.append("MG_ID=\"<your-mg-id>\"")
+    if needs_generic_mg:
+        parts.append("MG_ID=\"<your-mg-id>\"")
     parts.append("LOCATION=\"<your-region>\"  # e.g. westeurope")
     if needs_slz_root:
         parts.append(
@@ -602,7 +666,7 @@ def _write_how_to_deploy(
         )
     if needs_tenant_root:
         parts.append(
-            "TENANT_ROOT_MG_ID=\"<your-tenant-root-mg-id>\""
+            f"TENANT_ROOT_MG_ID=\"{tenant_root_default}\""
             "  # parent of the SLZ root; used only by the management-groups template"
         )
     if needs_rg:

@@ -223,6 +223,7 @@ def _render_sh(
     needs_rg: bool,
     needs_slz_root: bool,
     needs_tenant_root: bool,
+    needs_generic_mg: bool,
     has_dine: bool,
 ) -> str:
     """Render ``deploy-all.sh``.
@@ -231,25 +232,31 @@ def _render_sh(
     additionally runs create after every what-if succeeds. Fail-fast via
     ``set -euo pipefail``; first non-zero aborts.
 
-    Tenant id is NEVER inlined into the emitted script — the script is
-    meant to be shared with the operator who runs it, and a tenant GUID
-    in source control is a disclosure smell. ``tenant_id`` is retained
-    in the signature for backward compatibility; the placeholder
-    ``<tenant-id>`` always wins.
+    When ``tenant_id`` is known (from Discover ``--tenant``), it is
+    inlined as the ``TENANT_EXPECTED`` default and as the default for
+    ``TENANT_ROOT_MG_ID`` (the tenant-root MG id equals the tenant id
+    for the overwhelming majority of tenants). Tenant ids are not
+    secrets — they are visible in every Azure Portal URL and JWT — and
+    inlining them eliminates the single most common failure mode of the
+    emitted runbook (operator forgets to edit the Variables block).
     """
-    _ = tenant_id  # backcompat: arg retained, value never inlined
-    tenant_default = "<tenant-id>"
+    tenant_default = tenant_id or "<tenant-id>"
     brownfield_block = _sh_brownfield_block(alias_map) if alias_map else ""
-    var_lines = ['MG_ID="<your-mg-id>"', 'LOCATION="<your-region>"']
-    placeholder_vars = ["MG_ID", "LOCATION"]
+    var_lines: list[str] = ['LOCATION="<your-region>"']
+    placeholder_vars: list[str] = ["LOCATION"]
+    if needs_generic_mg:
+        var_lines.insert(0, 'MG_ID="<your-mg-id>"')
+        placeholder_vars.insert(0, "MG_ID")
     if needs_slz_root:
         slz_default = alias_map.get("slz", "<your-slz-root-mg-id>")
         var_lines.append(f'SLZ_ROOT_MG_ID="{slz_default}"')
         if slz_default.startswith("<") and slz_default.endswith(">"):
             placeholder_vars.append("SLZ_ROOT_MG_ID")
     if needs_tenant_root:
-        var_lines.append('TENANT_ROOT_MG_ID="<your-tenant-root-mg-id>"')
-        placeholder_vars.append("TENANT_ROOT_MG_ID")
+        tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
+        var_lines.append(f'TENANT_ROOT_MG_ID="{tenant_root_default}"')
+        if tenant_root_default.startswith("<") and tenant_root_default.endswith(">"):
+            placeholder_vars.append("TENANT_ROOT_MG_ID")
     if needs_rg:
         var_lines.append('RG_NAME="<your-resource-group>"')
         placeholder_vars.append("RG_NAME")
@@ -425,25 +432,31 @@ def _render_ps1(
     needs_rg: bool,
     needs_slz_root: bool,
     needs_tenant_root: bool,
+    needs_generic_mg: bool,
     has_dine: bool,
 ) -> str:
     """Render ``deploy-all.ps1``.
 
-    Tenant id is never inlined; see ``_render_sh`` docstring.
+    Symmetric to ``_render_sh``; see that docstring for the tenant-id
+    inlining rationale.
     """
-    _ = tenant_id  # backcompat: arg retained, value never inlined
-    tenant_default = "<tenant-id>"
+    tenant_default = tenant_id or "<tenant-id>"
     brownfield_block = _ps1_brownfield_block(alias_map) if alias_map else ""
-    var_lines = ['$mgId = "<your-mg-id>"', '$location = "<your-region>"']
-    placeholder_vars = ["mgId", "location"]
+    var_lines: list[str] = ['$location = "<your-region>"']
+    placeholder_vars: list[str] = ["location"]
+    if needs_generic_mg:
+        var_lines.insert(0, '$mgId = "<your-mg-id>"')
+        placeholder_vars.insert(0, "mgId")
     if needs_slz_root:
         slz_default = alias_map.get("slz", "<your-slz-root-mg-id>")
         var_lines.append(f'$slzRootMgId = "{slz_default}"')
         if slz_default.startswith("<") and slz_default.endswith(">"):
             placeholder_vars.append("slzRootMgId")
     if needs_tenant_root:
-        var_lines.append('$tenantRootMgId = "<your-tenant-root-mg-id>"')
-        placeholder_vars.append("tenantRootMgId")
+        tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
+        var_lines.append(f'$tenantRootMgId = "{tenant_root_default}"')
+        if tenant_root_default.startswith("<") and tenant_root_default.endswith(">"):
+            placeholder_vars.append("tenantRootMgId")
     if needs_rg:
         var_lines.append('$rgName = "<your-resource-group>"')
         placeholder_vars.append("rgName")
@@ -737,6 +750,16 @@ def write_deploy_script(
         s.template in {"sovereignty-global-policies", "alz-policy-definitions"} for s in steps
     )
     needs_tenant_root = any(s.template == "management-groups" for s in steps)
+    # Generic ``$mgId`` / ``$MG_ID`` is only referenced when a MG-scoped step
+    # has no template-specific resolution (e.g. policy-assignment /
+    # role-assignment, or sovereignty-confidential-policies without a
+    # matching mg_alias entry). Emitting the variable + placeholder guard
+    # unconditionally caused ``deploy-all.ps1`` to abort with
+    # "mgId still holds the placeholder '<your-mg-id>'" on runs where no
+    # step actually used it.
+    needs_generic_mg = any(
+        s.scope == "managementGroup" and s.mg_pwsh_var is None for s in steps
+    )
     has_dine = any(s.template == "archetype-policies" for s in steps)
 
     runbooks_dir = out_dir / "runbooks"
@@ -750,6 +773,7 @@ def write_deploy_script(
         needs_rg=needs_rg,
         needs_slz_root=needs_slz_root,
         needs_tenant_root=needs_tenant_root,
+        needs_generic_mg=needs_generic_mg,
         has_dine=has_dine,
     )
     sh_path = runbooks_dir / "deploy-all.sh"
@@ -763,6 +787,7 @@ def write_deploy_script(
         needs_rg=needs_rg,
         needs_slz_root=needs_slz_root,
         needs_tenant_root=needs_tenant_root,
+        needs_generic_mg=needs_generic_mg,
         has_dine=has_dine,
     )
     ps1_path = runbooks_dir / "deploy-all.ps1"

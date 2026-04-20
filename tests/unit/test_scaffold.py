@@ -394,10 +394,12 @@ def test_deploy_commands_are_scope_aware() -> None:
     assert 'RG_NAME="<your-resource-group>"' not in bash
     assert "$rgName" not in pwsh
 
-    # Both shells declare the MG / location vars.
-    assert 'MG_ID="<your-mg-id>"' in bash
+    # Generic MG_ID / $mgId is suppressed when no step falls through to the
+    # default (management-groups -> $TENANT_ROOT_MG_ID; log-analytics is
+    # subscription-scoped). LOCATION is always declared.
+    assert 'MG_ID="<your-mg-id>"' not in bash
+    assert '$mgId = "<your-mg-id>"' not in pwsh
     assert 'LOCATION="<your-region>"' in bash
-    assert '$mgId = "<your-mg-id>"' in pwsh
     assert '$location = "<your-region>"' in pwsh
 
 

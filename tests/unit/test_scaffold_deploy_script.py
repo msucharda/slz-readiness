@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from slz_readiness.scaffold.deploy_script import (
@@ -289,6 +290,108 @@ def test_mg_variable_resolution_parity_with_cli() -> None:
         )
 
 
+def test_needs_generic_mg_parity_with_cli() -> None:
+    """``needs_generic_mg`` must agree between deploy_script and cli.
+
+    The runbook renderer (``deploy_script.write_deploy_script``) derives
+    ``needs_generic_mg`` from ``steps[*].mg_pwsh_var is None``; the
+    how-to-deploy renderer (``cli._needs_generic_mg``) duplicates the
+    per-template resolution table. If one drifts from the other,
+    ``how-to-deploy.md`` can ask operators to populate ``$mgId`` that
+    the runbook never references (or omit it when the runbook does).
+    This locks the equivalence for both the "needed" and "not needed"
+    branches.
+    """
+    from slz_readiness.scaffold import cli as scaffold_cli
+
+    def _cli_side(emitted: list[dict[str, Any]], alias_map: dict[str, str]) -> bool:
+        by_order = sorted(
+            emitted,
+            key=lambda e: (
+                scaffold_cli._DEPLOY_ORDER.index(e["template"])
+                if e["template"] in scaffold_cli._DEPLOY_ORDER
+                else 99,
+                e.get("scope", ""),
+            ),
+        )
+        return scaffold_cli._needs_generic_mg(by_order, alias_map)
+
+    def _deploy_side(emitted: list[dict[str, Any]], alias_map: dict[str, str]) -> bool:
+        steps = _plan_steps(emitted, alias_map=alias_map)
+        return any(
+            s.scope == "managementGroup" and s.mg_pwsh_var is None for s in steps
+        )
+
+    # Case 1: only templates that bind to a dedicated MG var -> no generic MG.
+    no_generic = [
+        {"template": "management-groups", "scope": "tenant",
+         "bicep": "", "params": "", "rule_ids": []},
+        {"template": "alz-policy-definitions", "scope": "tenant",
+         "bicep": "", "params": "", "rule_ids": []},
+        {"template": "sovereignty-global-policies", "scope": "tenant",
+         "bicep": "", "params": "", "rule_ids": []},
+        {"template": "archetype-policies", "scope": "corp",
+         "bicep": "", "params": "", "rule_ids": []},
+        {"template": "sovereignty-confidential-policies", "scope": "confidential_corp",
+         "bicep": "", "params": "", "rule_ids": []},
+    ]
+    alias = {"slz": "alz", "confidential_corp": "conf-corp"}
+    assert _cli_side(no_generic, alias) is False
+    assert _deploy_side(no_generic, alias) is False
+    assert _cli_side(no_generic, alias) == _deploy_side(no_generic, alias)
+
+    # Case 2: policy-assignment falls through -> generic MG required.
+    with_generic = [
+        {"template": "management-groups", "scope": "tenant",
+         "bicep": "", "params": "", "rule_ids": []},
+        {"template": "policy-assignment", "scope": "corp",
+         "bicep": "", "params": "", "rule_ids": []},
+    ]
+    assert _cli_side(with_generic, alias) is True
+    assert _deploy_side(with_generic, alias) is True
+
+    # Case 3: confidential-policies without matching alias -> generic MG required.
+    conf_no_alias = [
+        {"template": "sovereignty-confidential-policies", "scope": "confidential_corp",
+         "bicep": "", "params": "", "rule_ids": []},
+    ]
+    assert _cli_side(conf_no_alias, {}) is True
+    assert _deploy_side(conf_no_alias, {}) is True
+
+
+def test_how_to_deploy_prerequisites_omit_unused_mg_id(tmp_path: Path) -> None:
+    """``how-to-deploy.md`` prerequisites block mirrors the runbook.
+
+    Regression companion to ``test_generic_mg_id_omitted_when_unused``:
+    when no emitted step references ``$mgId`` / ``MG_ID``, the
+    prerequisites variable listing in ``how-to-deploy.md`` must not
+    declare them either. Otherwise the doc instructs operators to fill
+    a variable the runbook never uses — and, worse, ``TENANT_ROOT_MG_ID``
+    stayed as a placeholder despite a known tenant id.
+    """
+    from slz_readiness.scaffold import cli as scaffold_cli
+
+    emitted = _mk_emitted(
+        "management-groups",
+        "archetype-policies",
+        "alz-policy-definitions",
+        "sovereignty-global-policies",
+    )
+    tenant = "11111111-2222-3333-4444-555555555555"
+    scaffold_cli._write_how_to_deploy(
+        out_dir=tmp_path,
+        emitted=emitted,
+        tenant_id=tenant,
+    )
+    body = (tmp_path / "how-to-deploy.md").read_text(encoding="utf-8")
+    # Unused generic MG vars must not appear in either code fence.
+    assert '$mgId = "<your-mg-id>"' not in body
+    assert 'MG_ID="<your-mg-id>"' not in body
+    # Tenant-root default is inlined when tenant_id is supplied.
+    assert f'$tenantRootMgId = "{tenant}"' in body
+    assert f'TENANT_ROOT_MG_ID="{tenant}"' in body
+
+
 def test_runbook_filenames_on_allowlist() -> None:
     """Emitted runbook filenames must appear in ``ALLOWED_RUNBOOKS``.
 
@@ -449,26 +552,49 @@ def test_management_groups_uses_tenant_root_var(tmp_path: Path) -> None:
     assert "$tenantRootMgId" in ps1_mg_block
 
 
-def test_tenant_id_never_inlined(tmp_path: Path) -> None:
-    """Tenant GUIDs must never leak into the emitted scripts.
+def test_tenant_id_inlined_when_provided(tmp_path: Path) -> None:
+    """When Discover supplies ``--tenant``, inline it as the TENANT_EXPECTED
+    default and as the default for TENANT_ROOT_MG_ID.
 
-    Regression: prior versions inlined ``tenant_id`` as the value of
-    ``TENANT_EXPECTED`` / ``$tenantExpected``, making the generated
-    scripts non-shareable (disclosed the customer tenant id).
+    Rationale: tenant ids are not secrets (they appear in every Azure
+    Portal URL, in JWT ``tid`` claims, and in ``az account show``
+    output). Leaving ``TENANT_EXPECTED`` / ``$tenantExpected`` as
+    ``<tenant-id>`` meant operators had to hand-edit the Variables
+    block on every run, and forgetting to do so was the #1 failure
+    mode of the runbook ("mgId still holds the placeholder..."). The
+    tenant-root MG id equals the tenant id for the vast majority of
+    tenants, so defaulting ``TENANT_ROOT_MG_ID`` to it as well removes
+    a redundant edit.
     """
     emitted = _mk_emitted("management-groups")
-    secret_tenant = "99554ba8-f985-4a2d-be21-fc3a62570dd4"
+    tenant = "99554ba8-f985-4a2d-be21-fc3a62570dd4"
     write_deploy_script(
         out_dir=tmp_path,
         emitted=emitted,
-        tenant_id=secret_tenant,
+        tenant_id=tenant,
     )
     sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
     ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
-    assert secret_tenant not in sh
-    assert secret_tenant not in ps1
+    assert f'TENANT_EXPECTED="{tenant}"' in sh
+    assert f'$tenantExpected = "{tenant}"' in ps1
+    assert f'TENANT_ROOT_MG_ID="{tenant}"' in sh
+    assert f'$tenantRootMgId = "{tenant}"' in ps1
+    # The placeholder guard must NOT fire on TENANT_ROOT_MG_ID when it
+    # was inlined with a concrete tenant id.
+    assert "TENANT_ROOT_MG_ID still holds the placeholder" not in sh
+    assert "tenantRootMgId still holds the placeholder" not in ps1
+
+
+def test_tenant_id_omitted_falls_back_to_placeholder(tmp_path: Path) -> None:
+    """Without ``tenant_id``, the pre-v0.14.x placeholder behaviour is kept."""
+    emitted = _mk_emitted("management-groups")
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
     assert 'TENANT_EXPECTED="<tenant-id>"' in sh
     assert '$tenantExpected = "<tenant-id>"' in ps1
+    assert 'TENANT_ROOT_MG_ID="<your-tenant-root-mg-id>"' in sh
+    assert '$tenantRootMgId = "<your-tenant-root-mg-id>"' in ps1
 
 
 def test_placeholder_guard_blocks_unedited_vars(tmp_path: Path) -> None:
@@ -479,8 +605,14 @@ def test_placeholder_guard_blocks_unedited_vars(tmp_path: Path) -> None:
     failure as phantom success ("The system cannot find the file specified.").
     The script must refuse to proceed while any declared variable still holds
     its ``<...>`` placeholder.
+
+    Uses ``policy-assignment`` to force emission of the generic ``MG_ID``
+    variable (management-groups + archetype-policies alone resolve every
+    step to a template-specific MG variable, so ``MG_ID`` would not be
+    declared and its guard would legitimately be absent — see
+    ``test_generic_mg_id_omitted_when_unused``).
     """
-    emitted = _mk_emitted("management-groups", "archetype-policies")
+    emitted = _mk_emitted("management-groups", "archetype-policies", "policy-assignment")
     write_deploy_script(out_dir=tmp_path, emitted=emitted)
     sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
     ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
@@ -501,3 +633,32 @@ def test_placeholder_guard_blocks_unedited_vars(tmp_path: Path) -> None:
     ps1_guard_idx = ps1.index("still holds the placeholder")
     ps1_whatif_idx = ps1.index("Wave 1 what-if pass")
     assert ps1_guard_idx < ps1_whatif_idx
+
+
+def test_generic_mg_id_omitted_when_unused(tmp_path: Path) -> None:
+    """Generic ``MG_ID`` var + guard are suppressed when no step references it.
+
+    Regression (slz-demo 20260420T195152Z): ``deploy-all.ps1`` aborted
+    with "mgId still holds the placeholder '<your-mg-id>'" on a run
+    whose steps (management-groups, archetype-policies, alz-policy-
+    definitions, sovereignty-*) all resolved to template-specific MG
+    variables — the ``$mgId`` variable was declared but never used,
+    yet the placeholder guard still tripped.
+    """
+    emitted = _mk_emitted(
+        "management-groups",
+        "archetype-policies",
+        "alz-policy-definitions",
+        "sovereignty-global-policies",
+    )
+    write_deploy_script(
+        out_dir=tmp_path,
+        emitted=emitted,
+        alias_map={"slz": "contoso-slz"},
+    )
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+    assert 'MG_ID="<your-mg-id>"' not in sh
+    assert '$mgId = "<your-mg-id>"' not in ps1
+    assert '"MG_ID still holds the placeholder' not in sh
+    assert '"mgId still holds the placeholder' not in ps1
