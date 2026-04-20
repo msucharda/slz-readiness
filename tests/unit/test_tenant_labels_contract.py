@@ -30,6 +30,12 @@ def _shared_assertions(text: str) -> None:
     assert "findTenantInformationByTenantId" in text
     assert "graph.microsoft.com" in text
     assert "az rest" in text and "--method GET" in text
+    # Shell-portability: the tenantId string literal must be wrapped in
+    # percent-encoded single quotes (`%27`). Bare `'` gets stripped by
+    # Windows shells and Graph then returns `Bad Request — Error in query
+    # syntax.` — see the plan in session-state for the investigation.
+    assert "tenantId=%27<id>%27" in text
+    assert "tenantId='<id>'" not in text
     # Final-tier subscription-name hint, with the mandatory `(e.g. ...)`
     # marker so it is never mistaken for a synthesised tenant name.
     assert "(e.g. <sub1>, <sub2>)" in text

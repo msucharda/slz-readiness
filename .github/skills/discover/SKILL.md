@@ -45,8 +45,16 @@ bypass the structured-confirmation UX and caused a prior regression.
    yielded no usable `displayName`, call:
    ```bash
    az rest --method GET \
-     --url "https://graph.microsoft.com/v1.0/tenantRelationships/findTenantInformationByTenantId(tenantId='<id>')"
+     --url "https://graph.microsoft.com/v1.0/tenantRelationships/findTenantInformationByTenantId(tenantId=%27<id>%27)"
    ```
+   The `%27` sequences are percent-encoded single quotes. OData requires
+   the tenantId to be a quoted string literal, and encoding the
+   delimiters is mandatory for shell portability — on Windows
+   (`cmd.exe` and some PowerShell invocations) bare single quotes inside
+   a double-quoted URL are stripped before `az rest` sends the request,
+   so Graph receives an unquoted literal and returns
+   `Bad Request — Error in query syntax.` Do NOT replace `%27` with `'`.
+
    Returns `displayName` and `defaultDomainName` for any tenant in
    commercial Entra (`CrossTenantInformation.ReadBasic.All`, granted
    to all users by default). The pre-tool-use hook permits

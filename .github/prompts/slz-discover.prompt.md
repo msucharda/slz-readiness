@@ -39,8 +39,16 @@ Entra). For each tenant id missing a `displayName`, call:
 
 ```bash
 az rest --method GET \
-  --url "https://graph.microsoft.com/v1.0/tenantRelationships/findTenantInformationByTenantId(tenantId='<id>')"
+  --url "https://graph.microsoft.com/v1.0/tenantRelationships/findTenantInformationByTenantId(tenantId=%27<id>%27)"
 ```
+
+The `%27` sequences are percent-encoded single quotes — OData requires
+the tenantId to be a quoted string literal, and encoding the delimiters
+is mandatory for shell portability. On Windows (`cmd.exe` and some
+PowerShell invocations of external programs) bare single quotes inside
+a double-quoted URL are stripped before `az rest` sends the request, so
+Graph receives an unquoted literal and returns
+`Bad Request — Error in query syntax.` Do NOT replace `%27` with `'`.
 
 The response shape is `{ "displayName": "...", "defaultDomainName":
 "...", "tenantId": "...", "federationBrandName": null }`. Merge
