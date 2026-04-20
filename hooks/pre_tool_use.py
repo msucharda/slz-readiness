@@ -59,6 +59,18 @@ _TRANSPORT_TOOLS_RE = re.compile(
 )
 _AZ_REST_RE = re.compile(r"(^|\s)az\s+rest\b", re.IGNORECASE)
 
+# v0.14.0 — the scaffold phase can emit one-shot deploy orchestrators
+# (``runbooks/deploy-all.{ps1,sh}`` and ``runbooks/grant-dine-roles.{ps1,sh}``)
+# under operator opt-in. The agent MUST NOT invoke them; HITL deployment is
+# the contract (AGENTS.md §6/§7). Invoking the what-if-only default is also
+# blocked — the hook cannot distinguish ``--apply`` inside the script from
+# outside, and running the orchestrator at all implies the agent is about
+# to run Azure control-plane writes on the operator's behalf.
+_SLZ_RUNBOOK_RE = re.compile(
+    r"(^|[\s/\\])(deploy-all|grant-dine-roles)\.(ps1|sh)(\s|$)",
+    re.IGNORECASE,
+)
+
 ALLOWED_VERBS_MSG = (
     "Allowed verbs: list, show, get, query, search, export, validate, what-if, "
     "check, account, version, summarize, preview, download, "
@@ -102,6 +114,14 @@ def decide(cmd: str) -> tuple[int, str]:
     transport_reason = _transport_block_reason(cmd)
     if transport_reason:
         return 1, transport_reason
+    # v0.14.0 — block agent invocation of emitted deploy orchestrators.
+    # HITL: the operator runs these, not the agent. See AGENTS.md §6/§7.
+    if _SLZ_RUNBOOK_RE.search(cmd):
+        return 1, (
+            f"pre-tool-use: BLOCKED slz-readiness deploy orchestrator in: {cmd}\n"
+            "The agent must not execute deploy-all / grant-dine-roles "
+            "scripts; HITL deployment is the contract."
+        )
     if not AZURE_TOOL_RE.search(cmd):
         return 0, ""
     if DENY_RE.search(cmd):

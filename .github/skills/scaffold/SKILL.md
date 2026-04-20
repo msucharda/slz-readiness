@@ -47,8 +47,21 @@ and `artifacts/<run>/scaffold.manifest.json`.
    coverage for simplicity; `include-placeholders` requires manual
    editing before deploy.
 
+   In the SAME `ask_user` form, include a second boolean field
+   `emit_deploy_script` (default `false`). When `true`, the CLI is
+   invoked with `--emit-deploy-script` and emits an opt-in one-shot
+   orchestrator at `artifacts/<run>/runbooks/deploy-all.{ps1,sh}`
+   (plus `grant-dine-roles.{ps1,sh}` when archetype-policies is in
+   the emit set). The script defaults to `-WhatIf` / `--whatif`;
+   passing `-Apply` / `--apply` runs `create`. Wave 1 (audit) only.
+   **The agent cannot execute the emitted script** —
+   `hooks/pre_tool_use.py` blocks any invocation of
+   `deploy-all.{ps1,sh}` or `grant-dine-roles.{ps1,sh}`. The
+   operator runs it themselves.
+
 2. **Pre-flight the parameter sidecar (v0.12.1).** Run the CLI first with
-   NO `--params` (but DO pass `--scaffold-profile <choice>`) to produce
+   NO `--params` (but DO pass `--scaffold-profile <choice>` and
+   `--emit-deploy-script` if the operator opted in) to produce
    `artifacts/<run>/scaffold.params.auto.json`.
    Inspect its `needs_operator_input` list:
    - If **non-empty**, you MUST call `ask_user` BEFORE any

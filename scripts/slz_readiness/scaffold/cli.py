@@ -258,6 +258,7 @@ def _write_how_to_deploy(
     run_dir: Path | None = None,
     rewrite_names: bool = False,
     tenant_id: str | None = None,
+    emit_deploy_script: bool = False,
 ) -> None:
     """Emit ``how-to-deploy.md`` with Wave-1/Wave-2 recipes in Bash + PowerShell.
 
@@ -570,6 +571,57 @@ def _write_how_to_deploy(
     parts.append("")
     parts.append("## Wave 1 — Audit")
     parts.append("")
+    if emit_deploy_script:
+        parts.append("### Option B — one-shot orchestrator (Wave 1 only)")
+        parts.append("")
+        parts.append(
+            "This run emitted `runbooks/deploy-all.ps1` + `runbooks/deploy-all.sh` — "
+            "a single-file orchestrator that runs `what-if` for every template "
+            "below, then (only when `-Apply` / `--apply` is passed) runs `create` "
+            "in canonical order. Fail-fast on the first non-zero exit."
+        )
+        parts.append("")
+        parts.append("```bash")
+        parts.append("# what-if only (default, safe)")
+        parts.append("./runbooks/deploy-all.sh")
+        parts.append("")
+        parts.append("# deploy Wave 1")
+        parts.append("./runbooks/deploy-all.sh --apply")
+        parts.append("```")
+        parts.append("")
+        parts.append("```powershell")
+        parts.append("# what-if only (default, safe)")
+        parts.append("./runbooks/deploy-all.ps1")
+        parts.append("")
+        parts.append("# deploy Wave 1")
+        parts.append("./runbooks/deploy-all.ps1 -Apply")
+        parts.append("```")
+        parts.append("")
+        if alias_map:
+            parts.append(
+                "Brownfield gate: because `mg_alias.json` is non-empty, the "
+                "orchestrator refuses to run until you pass `-SkipMgPrereq` / "
+                "`--skip-mg-prereq` **after** verifying each aliased MG is "
+                "already parented correctly (see the brownfield-prerequisite "
+                "section above — Bicep cannot re-parent an existing MG)."
+            )
+            parts.append("")
+        if has_dine:
+            parts.append(
+                "DINE role grants: after `deploy-all` succeeds with `--apply`, "
+                "run `runbooks/grant-dine-roles.{ps1,sh}` (emitted as a separate "
+                "template) to grant Contributor/Reader to the policy assignment "
+                "MSIs. The principalIds do not exist until `archetype-policies` "
+                "is actually deployed, which is why this stays a post-hook."
+            )
+            parts.append("")
+        parts.append(
+            "The per-template commands below (Option A) remain the ground-truth "
+            "recipe for partial re-runs and are what the orchestrator iterates."
+        )
+        parts.append("")
+        parts.append("### Option A — per-template commands")
+        parts.append("")
     parts.append(
         "Run `what-if` for every template before `create`. Every template below "
         "is already parameterised with `rolloutPhase=audit`, so policies will "
@@ -772,6 +824,7 @@ def _write_scaffold_summary(
     emitted: list[dict[str, Any]],
     warnings: list[str],
     run_dir: Path | None = None,
+    emit_deploy_script: bool = False,
 ) -> None:
     unscaffolded = _unscaffolded_gaps(gaps, emitted=emitted)
     alias_map = _load_alias_for_doc(run_dir)
@@ -870,6 +923,14 @@ def _write_scaffold_summary(
             "`how-to-deploy.md` for the full phased-rollout recipe** "
             "(Audit → Observe → Enforce) and DINE remediation role steps."
         )
+        if emit_deploy_script:
+            parts.append("")
+            parts.append(
+                "One-shot orchestrator: this run also emitted "
+                "`runbooks/deploy-all.ps1` + `runbooks/deploy-all.sh`. "
+                "Default `-WhatIf` / `--whatif` for every template; pass "
+                "`-Apply` / `--apply` to run `create`. Wave 1 only."
+            )
         parts.append("")
         cmds = _deploy_commands(emitted, alias_map=alias_map)
         parts.append("### PowerShell")
@@ -991,6 +1052,23 @@ def _write_run_rollup(out_dir: Path) -> None:
     ),
 )
 @click.option(
+    "--emit-deploy-script/--no-emit-deploy-script",
+    "emit_deploy_script",
+    default=False,
+    help=(
+        "v0.14.0 opt-in: emit a one-shot `runbooks/deploy-all.{ps1,sh}` "
+        "that iterates every emitted template in canonical order, running "
+        "`az deployment ... what-if` for all of them first, and only "
+        "running `create` when `-Apply`/`--apply` is passed. Wave 1 "
+        "(audit) only. The plugin never executes the emitted script — "
+        "hooks/pre_tool_use.py still blocks the agent from running it. "
+        "Default OFF (matches the existing `ask_user` UX: the operator "
+        "must explicitly opt in). When archetype-policies is in the "
+        "emit set, a companion `grant-dine-roles.{ps1,sh}` is also "
+        "written as a post-hook."
+    ),
+)
+@click.option(
     "--scaffold-profile",
     type=click.Choice(["full", "minimal", "include-placeholders"]),
     default="full",
@@ -1013,6 +1091,7 @@ def main(
     rewrite_names: bool | None,
     include_placeholders: bool,
     scaffold_profile: str,
+    emit_deploy_script: bool,
 ) -> None:
     gaps_doc = json.loads(gaps_path.read_text(encoding="utf-8"))
     gaps = gaps_doc.get("gaps", gaps_doc) if isinstance(gaps_doc, dict) else gaps_doc
@@ -1072,6 +1151,7 @@ def main(
             rewrite_names=rewrite_names,
             include_placeholders=include_placeholders,
             scaffold_profile=scaffold_profile,
+            emit_deploy_script=emit_deploy_script,
             prefilled_templates=sorted(prefilled.keys()),
             operator_params_supplied=params_path is not None,
             needs_operator_input_count=len(needs_input),
@@ -1134,6 +1214,7 @@ def main(
             emitted=emitted,
             warnings=warnings,
             run_dir=run_dir,
+            emit_deploy_script=emit_deploy_script,
         )
         # Resolve the tri-state rewrite_names the same way the engine does
         # so how-to-deploy.md reflects the actual emitted Bicep (the engine
@@ -1155,7 +1236,16 @@ def main(
             run_dir=run_dir,
             rewrite_names=resolved_rewrite_names,
             tenant_id=tenant_id,
+            emit_deploy_script=emit_deploy_script,
         )
+        if emit_deploy_script:
+            from .deploy_script import write_deploy_script
+            write_deploy_script(
+                out_dir=out_dir,
+                emitted=emitted,
+                alias_map=_alias_for_doc,
+                tenant_id=tenant_id,
+            )
         _write_run_rollup(out_dir)
     click.echo(f"Emitted {len(emitted)} templates -> {out_dir}")
     if warnings:

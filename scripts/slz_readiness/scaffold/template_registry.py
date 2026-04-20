@@ -106,4 +106,15 @@ TEMPLATE_RUNBOOKS: dict[str, list[str]] = {
 
 ALLOWED_RUNBOOKS: set[str] = {
     rb for rbs in TEMPLATE_RUNBOOKS.values() for rb in rbs
+} | {
+    # Run-level orchestrators (v0.14.0) — not keyed to a single template
+    # stem, so they live in ALLOWED_RUNBOOKS directly rather than through
+    # TEMPLATE_RUNBOOKS. Emitted by scripts/slz_readiness/scaffold/deploy_script.py
+    # only when the operator passes ``--emit-deploy-script`` (default off).
+    # The agent cannot execute these: hooks/pre_tool_use.py DENY_RE catches
+    # ``deploy`` / ``create`` / ``assign`` anywhere in the command string.
+    "deploy-all.ps1",
+    "deploy-all.sh",
+    "grant-dine-roles.ps1",
+    "grant-dine-roles.sh",
 }
