@@ -146,6 +146,31 @@ def _plan_steps(
             mg_bash_var = f'"{resolved}"'
             mg_pwsh_var = f'"{resolved}"'
             mg_note = f"target MG resolved from mg_alias.json: {scope_name} -> {resolved}"
+        elif template == "archetype-policies":
+            # Archetype policies are per-archetype MG assignments. Without
+            # per-scope resolution every archetype collapses onto a single
+            # ``$MG_ID`` placeholder and the operator has no way to tell
+            # which MG each assignment actually targets. Resolve from
+            # mg_alias.json when available, fall back to the canonical
+            # archetype name (corp / online / identity / ...).
+            resolved = alias_map.get(scope_name) or scope_name or "<archetype-mg>"
+            mg_bash_var = f'"{resolved}"'
+            mg_pwsh_var = f'"{resolved}"'
+            mg_note = (
+                f"target MG for archetype `{scope_name}`: {resolved} "
+                "(from mg_alias.json or canonical archetype name)"
+            )
+        elif template == "management-groups":
+            # The MG-hierarchy template creates child MGs under a parent.
+            # That parent is the tenant-root MG (which equals the tenant
+            # id for most tenants), NOT an archetype MG. See the header
+            # comment of scripts/scaffold/avm_templates/management-groups.bicep.
+            mg_bash_var = "$TENANT_ROOT_MG_ID"
+            mg_pwsh_var = "$tenantRootMgId"
+            mg_note = (
+                "hierarchy deploy: scope is the tenant-root MG (parent of slz). "
+                "For most tenants this equals the tenant id."
+            )
         steps.append(
             _Step(
                 template=template,
@@ -197,6 +222,7 @@ def _render_sh(
     tenant_id: str | None,
     needs_rg: bool,
     needs_slz_root: bool,
+    needs_tenant_root: bool,
     has_dine: bool,
 ) -> str:
     """Render ``deploy-all.sh``.
@@ -204,13 +230,22 @@ def _render_sh(
     ``--whatif`` (default, safe) runs what-if for every step. ``--apply``
     additionally runs create after every what-if succeeds. Fail-fast via
     ``set -euo pipefail``; first non-zero aborts.
+
+    Tenant id is NEVER inlined into the emitted script — the script is
+    meant to be shared with the operator who runs it, and a tenant GUID
+    in source control is a disclosure smell. ``tenant_id`` is retained
+    in the signature for backward compatibility; the placeholder
+    ``<tenant-id>`` always wins.
     """
-    tenant_default = tenant_id or "<tenant-id>"
+    _ = tenant_id  # backcompat: arg retained, value never inlined
+    tenant_default = "<tenant-id>"
     brownfield_block = _sh_brownfield_block(alias_map) if alias_map else ""
     var_lines = ['MG_ID="<your-mg-id>"', 'LOCATION="<your-region>"']
     if needs_slz_root:
         slz_default = alias_map.get("slz", "<your-slz-root-mg-id>")
         var_lines.append(f'SLZ_ROOT_MG_ID="{slz_default}"')
+    if needs_tenant_root:
+        var_lines.append('TENANT_ROOT_MG_ID="<your-tenant-root-mg-id>"')
     if needs_rg:
         var_lines.append('RG_NAME="<your-resource-group>"')
     vars_block = "\n".join(var_lines)
@@ -218,12 +253,23 @@ def _render_sh(
     whatif_steps = "\n\n".join(_sh_step_block(s, "what-if", i + 1, len(steps)) for i, s in enumerate(steps))
     create_steps = "\n\n".join(_sh_step_block(s, "create", i + 1, len(steps)) for i, s in enumerate(steps))
 
-    dine_footer = ""
+    # Emit the "Next steps" footer as a sequence of independent ``echo``
+    # statements. The prior implementation interpolated step 2 inside
+    # step 1's double-quoted string, producing an unterminated literal
+    # when has_dine was true ("Policy can't remediate" contained a bare
+    # single quote inside the outer "..." that bash then tried to match).
+    next_steps_lines = [
+        'echo "  1. Observe compliance data for days-to-weeks (see how-to-deploy.md section: Observe window)."',
+    ]
     if has_dine:
-        dine_footer = (
-            '\n  echo "  2. Run ./grant-dine-roles.sh to grant Contributor/Reader '
-            'to DINE MSIs (Azure Policy can\'t remediate until this runs)."'
+        next_steps_lines.append(
+            'echo "  2. Run ./runbooks/grant-dine-roles.sh to grant Contributor/Reader '
+            'to DINE MSIs (Azure Policy cannot remediate until this runs)."'
         )
+    next_steps_lines.append(
+        'echo "  3. For Wave 2 (enforce), re-scaffold with rolloutPhase=enforce params."'
+    )
+    next_steps_block = "\n".join(next_steps_lines)
 
     return f"""#!/usr/bin/env bash
 # deploy-all.sh — one-shot Wave-1 (audit) deploy orchestrator
@@ -246,6 +292,10 @@ def _render_sh(
 # applicable). Run it AFTER Wave 1 create succeeds — the principalIds
 # only exist post-deploy.
 set -euo pipefail
+
+# Re-anchor to the run-root so sibling bicep/ and params/ paths resolve
+# regardless of the caller's CWD. Enables ``./runbooks/deploy-all.sh``.
+cd -- "$(dirname -- "$0")/.."
 
 APPLY=false
 SKIP_MG_PREREQ=false
@@ -296,8 +346,7 @@ SECONDS=0
 echo ""
 echo "==> Wave 1 complete (total: ${{SECONDS}}s)"
 echo "    Next steps:"
-echo "  1. Observe compliance data for days-to-weeks (see how-to-deploy.md §Observe window).{dine_footer}"
-echo "  3. For Wave 2 (enforce), re-scaffold with rolloutPhase=enforce params."
+{next_steps_block}
 """
 
 
@@ -353,15 +402,22 @@ def _render_ps1(
     tenant_id: str | None,
     needs_rg: bool,
     needs_slz_root: bool,
+    needs_tenant_root: bool,
     has_dine: bool,
 ) -> str:
-    """Render ``deploy-all.ps1``."""
-    tenant_default = tenant_id or "<tenant-id>"
+    """Render ``deploy-all.ps1``.
+
+    Tenant id is never inlined; see ``_render_sh`` docstring.
+    """
+    _ = tenant_id  # backcompat: arg retained, value never inlined
+    tenant_default = "<tenant-id>"
     brownfield_block = _ps1_brownfield_block(alias_map) if alias_map else ""
     var_lines = ['$mgId = "<your-mg-id>"', '$location = "<your-region>"']
     if needs_slz_root:
         slz_default = alias_map.get("slz", "<your-slz-root-mg-id>")
         var_lines.append(f'$slzRootMgId = "{slz_default}"')
+    if needs_tenant_root:
+        var_lines.append('$tenantRootMgId = "<your-tenant-root-mg-id>"')
     if needs_rg:
         var_lines.append('$rgName = "<your-resource-group>"')
     vars_block = "\n".join(var_lines)
@@ -369,11 +425,21 @@ def _render_ps1(
     whatif_steps = "\n\n".join(_ps1_step_block(s, "what-if", i + 1, len(steps)) for i, s in enumerate(steps))
     create_steps = "\n\n".join(_ps1_step_block(s, "create", i + 1, len(steps)) for i, s in enumerate(steps))
 
-    dine_footer = ""
+    # Emit the "Next steps" footer as independent Write-Host calls. The
+    # prior implementation interpolated step 2 inside step 1's double-
+    # quoted string, producing an unterminated string literal when
+    # has_dine was true.
+    next_steps_lines = [
+        'Write-Host "  1. Observe compliance data for days-to-weeks (see how-to-deploy.md Observe window section)."',
+    ]
     if has_dine:
-        dine_footer = (
-            "\nWrite-Host \"  2. Run ./grant-dine-roles.ps1 to grant Contributor/Reader to DINE MSIs.\""
+        next_steps_lines.append(
+            'Write-Host "  2. Run ./runbooks/grant-dine-roles.ps1 to grant Contributor/Reader to DINE MSIs."'
         )
+    next_steps_lines.append(
+        'Write-Host "  3. For Wave 2 (enforce), re-scaffold with rolloutPhase=enforce params."'
+    )
+    next_steps_block = "\n".join(next_steps_lines)
 
     return f"""<#
 .SYNOPSIS
@@ -416,6 +482,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Re-anchor to the run-root so sibling bicep/ and params/ paths resolve
+# regardless of the caller's CWD. Enables `./runbooks/deploy-all.ps1`.
+Set-Location -LiteralPath (Join-Path $PSScriptRoot '..')
+
 Write-Host "==> Preflight"
 $tenantExpected = "{tenant_default}"
 try {{
@@ -455,8 +525,7 @@ $swCreate.Stop()
 Write-Host ""
 Write-Host ("==> Wave 1 complete (total: {{0}}s)" -f [int]$swCreate.Elapsed.TotalSeconds)
 Write-Host "    Next steps:"
-Write-Host "  1. Observe compliance data for days-to-weeks (see how-to-deploy.md Observe window section).{dine_footer}"
-Write-Host "  3. For Wave 2 (enforce), re-scaffold with rolloutPhase=enforce params."
+{next_steps_block}
 """
 
 
@@ -618,6 +687,7 @@ def write_deploy_script(
     needs_slz_root = any(
         s.template in {"sovereignty-global-policies", "alz-policy-definitions"} for s in steps
     )
+    needs_tenant_root = any(s.template == "management-groups" for s in steps)
     has_dine = any(s.template == "archetype-policies" for s in steps)
 
     runbooks_dir = out_dir / "runbooks"
@@ -630,6 +700,7 @@ def write_deploy_script(
         tenant_id=tenant_id,
         needs_rg=needs_rg,
         needs_slz_root=needs_slz_root,
+        needs_tenant_root=needs_tenant_root,
         has_dine=has_dine,
     )
     sh_path = runbooks_dir / "deploy-all.sh"
@@ -642,6 +713,7 @@ def write_deploy_script(
         tenant_id=tenant_id,
         needs_rg=needs_rg,
         needs_slz_root=needs_slz_root,
+        needs_tenant_root=needs_tenant_root,
         has_dine=has_dine,
     )
     ps1_path = runbooks_dir / "deploy-all.ps1"

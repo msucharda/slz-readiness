@@ -11,10 +11,12 @@ the module promises callers.
 """
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
-
 from slz_readiness.scaffold.deploy_script import (
     _DEPLOY_ORDER,
     _plan_steps,
@@ -196,6 +198,97 @@ def test_deploy_order_matches_cli() -> None:
     assert _DEPLOY_ORDER == scaffold_cli._DEPLOY_ORDER
 
 
+def test_mg_variable_resolution_parity_with_cli() -> None:
+    """_plan_steps MG variables must match cli._deploy_commands output.
+
+    Both modules duplicate a 5-branch if/elif for MG variable resolution
+    (sovereignty-global / alz-policy-def -> $SLZ_ROOT_MG_ID,
+    sovereignty-confidential -> per-scope alias,
+    archetype-policies -> per-scope,
+    management-groups -> $TENANT_ROOT_MG_ID,
+    everything else -> $MG_ID). If one side drifts from the other,
+    how-to-deploy.md (cli) will document a different MG target than
+    deploy-all.{sh,ps1} (deploy_script) actually deploys to. Silent
+    wrong-target deployments.
+    """
+    from slz_readiness.scaffold import cli as scaffold_cli
+
+    emitted = [
+        {
+            "template": "management-groups",
+            "scope": "tenant",
+            "bicep": "bicep/management-groups.bicep",
+            "params": "params/management-groups.parameters.json",
+            "rule_ids": [],
+            "rollout_phase": "audit",
+        },
+        {
+            "template": "alz-policy-definitions",
+            "scope": "tenant",
+            "bicep": "bicep/alz-policy-definitions.bicep",
+            "params": "params/alz-policy-definitions.parameters.json",
+            "rule_ids": [],
+            "rollout_phase": "audit",
+        },
+        {
+            "template": "sovereignty-global-policies",
+            "scope": "tenant",
+            "bicep": "bicep/sovereignty-global-policies.bicep",
+            "params": "params/sovereignty-global-policies.parameters.json",
+            "rule_ids": [],
+            "rollout_phase": "audit",
+        },
+        {
+            "template": "sovereignty-confidential-policies",
+            "scope": "confidential_corp",
+            "bicep": "bicep/sovereignty-confidential-policies.bicep",
+            "params": "params/sovereignty-confidential-policies.parameters.json",
+            "rule_ids": [],
+            "rollout_phase": "audit",
+        },
+        {
+            "template": "archetype-policies",
+            "scope": "corp",
+            "bicep": "bicep/archetype-policies.bicep",
+            "params": "params/archetype-policies.parameters.json",
+            "rule_ids": [],
+            "rollout_phase": "audit",
+        },
+    ]
+    alias_map = {
+        "slz": "alz",
+        "confidential_corp": "conf-corp",
+        "corp": "corp",
+    }
+
+    steps = _plan_steps(emitted, alias_map=alias_map)
+    cmds = scaffold_cli._deploy_commands(emitted, alias_map=alias_map)
+
+    # For every step rendered by _plan_steps, find the corresponding
+    # create/what-if line emitted by _deploy_commands and assert the MG
+    # target token matches.
+    expected_bash: dict[str, str] = {
+        "management-groups": "$TENANT_ROOT_MG_ID",
+        "alz-policy-definitions": "$SLZ_ROOT_MG_ID",
+        "sovereignty-global-policies": "$SLZ_ROOT_MG_ID",
+        "sovereignty-confidential-policies": '"conf-corp"',
+        "archetype-policies": '"corp"',
+    }
+    for step in steps:
+        token = expected_bash[step.template]
+        assert step.mg_bash_var == token, (step.template, step.mg_bash_var, token)
+        matching_lines = [
+            line for line in cmds["bash"]
+            if step.template in line and ("what-if" in line or "create" in line)
+        ]
+        assert matching_lines, (step.template, cmds["bash"])
+        assert any(token in line for line in matching_lines), (
+            step.template,
+            token,
+            matching_lines,
+        )
+
+
 def test_runbook_filenames_on_allowlist() -> None:
     """Emitted runbook filenames must appear in ``ALLOWED_RUNBOOKS``.
 
@@ -217,3 +310,163 @@ def test_script_declares_fail_fast(tmp_path: Path, shell: str) -> None:
         assert "set -euo pipefail" in body
     else:
         assert "$ErrorActionPreference = 'Stop'" in body
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for slz-demo runbook defects (see research report
+# ``take-a-look-at-slz-demo-runbook-scripts-generated-.md``).
+# ---------------------------------------------------------------------------
+
+
+def _pwsh_available() -> bool:
+    return shutil.which("pwsh") is not None or shutil.which("powershell") is not None
+
+
+def _pwsh_bin() -> str:
+    return shutil.which("pwsh") or shutil.which("powershell") or "pwsh"
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None,
+    reason="bash -n regression-check runs on POSIX (Linux/macOS CI) only",
+)
+def test_sh_parses_with_bash_n(tmp_path: Path) -> None:
+    """Emitted ``deploy-all.sh`` must be syntactically valid bash.
+
+    Regression: the ``{dine_footer}`` interpolation inside the outer
+    ``echo "..."`` produced an unterminated single-quote literal whenever
+    archetype-policies was present.
+    """
+    emitted = _mk_emitted(
+        "management-groups",
+        "log-analytics",
+        "archetype-policies",
+    )
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    sh_path = tmp_path / "runbooks" / "deploy-all.sh"
+    proc = subprocess.run(
+        ["bash", "-n", str(sh_path)], capture_output=True, text=True
+    )
+    assert proc.returncode == 0, f"bash -n failed: {proc.stderr}"
+
+
+@pytest.mark.skipif(not _pwsh_available(), reason="pwsh/powershell not available")
+def test_ps1_parses_with_parser(tmp_path: Path) -> None:
+    """Emitted ``deploy-all.ps1`` must parse cleanly.
+
+    Regression: the ``{dine_footer}`` interpolation inside the outer
+    ``Write-Host "..."`` produced an unterminated string literal whenever
+    archetype-policies was present.
+    """
+    emitted = _mk_emitted(
+        "management-groups",
+        "log-analytics",
+        "archetype-policies",
+    )
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    ps1_path = tmp_path / "runbooks" / "deploy-all.ps1"
+    # Use the PowerShell language parser to check syntax without executing.
+    script = (
+        "$tokens = $null; $errs = $null; "
+        f"[System.Management.Automation.Language.Parser]::ParseFile('{ps1_path.as_posix()}', "
+        "[ref]$tokens, [ref]$errs) | Out-Null; "
+        "if ($errs -and $errs.Count -gt 0) { "
+        "  $errs | ForEach-Object { Write-Error $_.Message }; exit 1 "
+        "}; exit 0"
+    )
+    proc = subprocess.run(
+        [_pwsh_bin(), "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 0, f"pwsh parse failed: {proc.stderr}"
+
+
+def test_scripts_self_locate_to_run_root(tmp_path: Path) -> None:
+    """Both scripts re-anchor to the run-root so relative bicep/ paths resolve."""
+    emitted = _mk_emitted("management-groups")
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+    assert 'cd -- "$(dirname -- "$0")/.."' in sh
+    assert "$PSScriptRoot" in ps1
+    assert "Set-Location" in ps1
+
+
+def test_archetype_policies_uses_per_scope_mg_id(tmp_path: Path) -> None:
+    """Each archetype-policies emission targets its own MG id, not ``$MG_ID``."""
+    emitted: list[dict[str, object]] = [
+        {
+            "template": "archetype-policies",
+            "scope": "corp",
+            "bicep": "bicep/archetype-policies-corp.bicep",
+            "params": "bicep/archetype-policies-corp.parameters.json",
+            "rollout_phase": "audit",
+        },
+        {
+            "template": "archetype-policies",
+            "scope": "identity",
+            "bicep": "bicep/archetype-policies-identity.bicep",
+            "params": "bicep/archetype-policies-identity.parameters.json",
+            "rollout_phase": "audit",
+        },
+    ]
+    write_deploy_script(
+        out_dir=tmp_path,
+        emitted=emitted,
+        alias_map={"identity": "contoso-identity"},
+    )
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    # corp falls back to the canonical scope name (no alias)
+    assert '--management-group-id "corp"' in sh
+    # identity resolves via the alias map
+    assert '--management-group-id "contoso-identity"' in sh
+    # archetype-policies must NOT collapse onto the generic placeholder
+    corp_idx = sh.index("archetype-policies-corp")
+    corp_block = sh[corp_idx : corp_idx + 600]
+    assert '"$MG_ID"' not in corp_block
+
+
+def test_management_groups_uses_tenant_root_var(tmp_path: Path) -> None:
+    """management-groups step targets ``$TENANT_ROOT_MG_ID`` / ``$tenantRootMgId``,
+    not the generic archetype ``$MG_ID``."""
+    emitted = _mk_emitted("management-groups")
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    assert 'TENANT_ROOT_MG_ID="<your-tenant-root-mg-id>"' in sh
+    assert '$tenantRootMgId = "<your-tenant-root-mg-id>"' in ps1
+
+    # The management-groups step must use the tenant-root variable.
+    sh_mg_idx = sh.index("management-groups")
+    sh_mg_block = sh[sh_mg_idx : sh_mg_idx + 800]
+    assert "$TENANT_ROOT_MG_ID" in sh_mg_block
+    # ...and not the plain $MG_ID
+    assert "--management-group-id \"$MG_ID\"" not in sh_mg_block
+
+    ps1_mg_idx = ps1.index("management-groups")
+    ps1_mg_block = ps1[ps1_mg_idx : ps1_mg_idx + 800]
+    assert "$tenantRootMgId" in ps1_mg_block
+
+
+def test_tenant_id_never_inlined(tmp_path: Path) -> None:
+    """Tenant GUIDs must never leak into the emitted scripts.
+
+    Regression: prior versions inlined ``tenant_id`` as the value of
+    ``TENANT_EXPECTED`` / ``$tenantExpected``, making the generated
+    scripts non-shareable (disclosed the customer tenant id).
+    """
+    emitted = _mk_emitted("management-groups")
+    secret_tenant = "99554ba8-f985-4a2d-be21-fc3a62570dd4"
+    write_deploy_script(
+        out_dir=tmp_path,
+        emitted=emitted,
+        tenant_id=secret_tenant,
+    )
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+    assert secret_tenant not in sh
+    assert secret_tenant not in ps1
+    assert 'TENANT_EXPECTED="<tenant-id>"' in sh
+    assert '$tenantExpected = "<tenant-id>"' in ps1
+

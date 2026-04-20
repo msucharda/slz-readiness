@@ -138,12 +138,16 @@ def _deploy_commands(
         e.get("template") in {"sovereignty-global-policies", "alz-policy-definitions"}
         for e in emitted
     )
+    needs_tenant_root = any(e.get("template") == "management-groups" for e in emitted)
     bash_lines: list[str] = ['MG_ID="<your-mg-id>"', 'LOCATION="<your-region>"']
     pwsh_lines: list[str] = ['$mgId = "<your-mg-id>"', '$location = "<your-region>"']
     if needs_slz_root:
         slz_default = slz_alias or "<your-slz-root-mg-id>"
         bash_lines.append(f'SLZ_ROOT_MG_ID="{slz_default}"')
         pwsh_lines.append(f'$slzRootMgId = "{slz_default}"')
+    if needs_tenant_root:
+        bash_lines.append('TENANT_ROOT_MG_ID="<your-tenant-root-mg-id>"')
+        pwsh_lines.append('$tenantRootMgId = "<your-tenant-root-mg-id>"')
     if needs_rg:
         bash_lines.append('RG_NAME="<your-resource-group>"')
         pwsh_lines.append('$rgName = "<your-resource-group>"')
@@ -193,6 +197,29 @@ def _deploy_commands(
             mg_bash_var = f'"{resolved}"'
             mg_pwsh_var = f'"{resolved}"'
             mg_note = f"# target MG resolved from mg_alias.json: {scope_name} -> {resolved}"
+        elif template == "archetype-policies":
+            # Each archetype-policies emission targets a distinct MG
+            # (corp, online, identity, …). Without per-scope resolution
+            # every archetype collapses onto a single ``$MG_ID``
+            # placeholder and the generated commands are ambiguous.
+            resolved = alias_map.get(scope_name) or scope_name or "<archetype-mg>"
+            mg_bash_var = f'"{resolved}"'
+            mg_pwsh_var = f'"{resolved}"'
+            mg_note = (
+                f"# target MG for archetype `{scope_name}`: {resolved} "
+                "(from mg_alias.json or canonical archetype name)"
+            )
+        elif template == "management-groups":
+            # The MG hierarchy deploys *into* the tenant-root MG (which
+            # equals the tenant id for most tenants), not an archetype.
+            # See scripts/scaffold/avm_templates/management-groups.bicep
+            # header — "Deploy against the tenant-root MG id".
+            mg_bash_var = "$TENANT_ROOT_MG_ID"
+            mg_pwsh_var = "$tenantRootMgId"
+            mg_note = (
+                "# hierarchy deploy: scope is the tenant-root MG (parent of slz). "
+                "For most tenants this equals the tenant id."
+            )
 
         if scope == "resourceGroup":
             bash_head = 'az deployment group {verb} --resource-group "$RG_NAME"'
@@ -294,6 +321,9 @@ def _write_how_to_deploy(
     needs_slz_root = any(
         e.get("template") in {"sovereignty-global-policies", "alz-policy-definitions"}
         for e in emitted
+    )
+    needs_tenant_root = any(
+        e.get("template") == "management-groups" for e in emitted
     )
     slz_alias = alias_map.get("slz")
     slz_root_default = slz_alias or "<your-slz-root-mg-id>"
@@ -550,6 +580,11 @@ def _write_how_to_deploy(
             f"$slzRootMgId = \"{slz_root_default}\""
             "  # SLZ-root MG id (alias `slz`) — NOT the tenant root"
         )
+    if needs_tenant_root:
+        parts.append(
+            "$tenantRootMgId = \"<your-tenant-root-mg-id>\""
+            "  # parent of the SLZ root; used only by the management-groups template"
+        )
     if needs_rg:
         parts.append("$rgName = \"<your-resource-group>\"")
     parts.append("```")
@@ -564,6 +599,11 @@ def _write_how_to_deploy(
         parts.append(
             f"SLZ_ROOT_MG_ID=\"{slz_root_default}\""
             "  # SLZ-root MG id (alias `slz`) — NOT the tenant root"
+        )
+    if needs_tenant_root:
+        parts.append(
+            "TENANT_ROOT_MG_ID=\"<your-tenant-root-mg-id>\""
+            "  # parent of the SLZ root; used only by the management-groups template"
         )
     if needs_rg:
         parts.append("RG_NAME=\"<your-resource-group>\"")

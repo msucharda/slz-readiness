@@ -98,16 +98,24 @@ def test_deploy_commands_tenant_id_is_not_used_for_sovereign_root() -> None:
 
 
 def test_deploy_commands_other_mg_templates_still_use_mgid() -> None:
-    """Only sovereignty-* templates rewire; archetype-policies uses $mgId."""
+    """archetype-policies now resolves the per-scope MG name (corp, identity, ...).
+
+    Previously all archetype emissions collapsed onto the single ``$mgId``
+    placeholder, making multi-archetype runs ambiguous. The fix resolves
+    either the alias (when present) or the canonical archetype name.
+    """
     cmds = _deploy_commands(
-        [_mk_emitted("archetype-policies", scope="scope:mg/corp")],
+        [_mk_emitted("archetype-policies", scope="corp")],
         alias_map={"corp": "corp"},
     )
     # No SLZ-root preamble at all (no sov-global emitted).
     assert not any("slzRootMgId" in line for line in cmds["pwsh"])
     assert not any("SLZ_ROOT_MG_ID" in line for line in cmds["bash"])
-    # archetype-policies uses $mgId.
+    # archetype-policies targets the resolved archetype MG name, not $mgId.
     assert any(
+        '--management-group-id "corp"' in line for line in cmds["pwsh"]
+    ), cmds["pwsh"]
+    assert not any(
         "--management-group-id $mgId" in line for line in cmds["pwsh"]
     ), cmds["pwsh"]
 

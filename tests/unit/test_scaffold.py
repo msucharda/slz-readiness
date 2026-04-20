@@ -371,10 +371,19 @@ def test_deploy_commands_are_scope_aware() -> None:
     bash = "\n".join(cmds["bash"])
     pwsh = "\n".join(cmds["pwsh"])
 
-    # management-groups -> managementGroup scope: az deployment mg + --location
-    assert 'az deployment mg what-if --management-group-id "$MG_ID" --location "$LOCATION"' in bash
-    assert "az deployment mg what-if --management-group-id $mgId --location $location" in pwsh
+    # management-groups -> managementGroup scope: az deployment mg + --location,
+    # but bound to the tenant-root MG variable (parent of slz), not $MG_ID.
+    assert (
+        'az deployment mg what-if --management-group-id $TENANT_ROOT_MG_ID '
+        '--location "$LOCATION"' in bash
+    )
+    assert (
+        "az deployment mg what-if --management-group-id $tenantRootMgId "
+        "--location $location" in pwsh
+    )
     assert "az deployment mg create --management-group-id" in bash
+    assert 'TENANT_ROOT_MG_ID="<your-tenant-root-mg-id>"' in bash
+    assert '$tenantRootMgId = "<your-tenant-root-mg-id>"' in pwsh
 
     # log-analytics -> subscription scope: az deployment sub + --location
     assert 'az deployment sub what-if --location "$LOCATION"' in bash
