@@ -384,13 +384,22 @@ def test_needs_generic_mg_parity_with_cli() -> None:
     assert _cli_side(with_generic, alias) is True
     assert _deploy_side(with_generic, alias) is True
 
-    # Case 3: confidential-policies without matching alias -> generic MG required.
+    # Case 3: confidential-policies with scope_name but no alias → uses
+    # canonical scope name directly (no generic MG needed).
     conf_no_alias = [
         {"template": "sovereignty-confidential-policies", "scope": "confidential_corp",
          "bicep": "", "params": "", "rule_ids": []},
     ]
-    assert _cli_side(conf_no_alias, {}) is True
-    assert _deploy_side(conf_no_alias, {}) is True
+    assert _cli_side(conf_no_alias, {}) is False
+    assert _deploy_side(conf_no_alias, {}) is False
+
+    # Case 3b: confidential-policies with EMPTY scope (rare) → needs generic MG.
+    conf_empty_scope = [
+        {"template": "sovereignty-confidential-policies", "scope": "",
+         "bicep": "", "params": "", "rule_ids": []},
+    ]
+    assert _cli_side(conf_empty_scope, {}) is True
+    assert _deploy_side(conf_empty_scope, {}) is True
 
 
 def test_how_to_deploy_prerequisites_omit_unused_mg_id(tmp_path: Path) -> None:
@@ -748,7 +757,90 @@ def test_params_by_template_fills_location_and_roots(tmp_path: Path) -> None:
     assert "still holds the placeholder" not in ps1
 
 
-def test_policy_assignment_scope_inlined_as_literal(tmp_path: Path) -> None:
+def test_confidential_null_alias_uses_canonical_name(tmp_path: Path) -> None:
+    """sovereignty-confidential-policies with null aliases uses canonical scope name.
+
+    Regression (slz-demo 20260420T195152Z): ``mg_alias.json`` had
+    ``"confidential_corp": null, "confidential_online": null``.
+    ``load_alias_map()`` filters null entries, so the alias_map was
+    ``{"slz": "alz", ...}``. The old code checked
+    ``scope_name in alias_map`` — since ``confidential_corp`` was NOT in
+    the alias_map, the step fell through to the generic ``$MG_ID``
+    placeholder. The fix resolves via ``alias_map.get(scope_name) or
+    scope_name``, matching the archetype-policies pattern.
+    """
+    emitted: list[dict[str, object]] = [
+        {
+            "template": "management-groups",
+            "scope": "tenant",
+            "bicep": "bicep/management-groups.bicep",
+            "params": "params/management-groups.parameters.json",
+            "rollout_phase": "audit",
+        },
+        {
+            "template": "sovereignty-confidential-policies",
+            "scope": "confidential_corp",
+            "bicep": "bicep/sovereignty-confidential-policies-confidential_corp.bicep",
+            "params": "params/sovereignty-confidential-policies-confidential_corp.parameters.json",
+            "rollout_phase": "audit",
+        },
+        {
+            "template": "sovereignty-confidential-policies",
+            "scope": "confidential_online",
+            "bicep": "bicep/sovereignty-confidential-policies-confidential_online.bicep",
+            "params": (
+                "params/sovereignty-confidential-policies"
+                "-confidential_online.parameters.json"
+            ),
+            "rollout_phase": "audit",
+        },
+    ]
+    # Brownfield: slz aliased, but confidential_* entries are null (filtered
+    # out by load_alias_map). This was the exact slz-demo scenario.
+    write_deploy_script(
+        out_dir=tmp_path,
+        emitted=emitted,
+        alias_map={"slz": "alz", "landingzones": "workloads", "platform": "platform"},
+        tenant_id="99554ba8-f985-4a2d-be21-fc3a62570dd4",
+    )
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    # Generic $MG_ID must NOT appear — both confidential steps should use
+    # their canonical scope name directly.
+    assert 'MG_ID="<your-mg-id>"' not in sh
+    assert '$mgId = "<your-mg-id>"' not in ps1
+
+    # Each confidential step should use its canonical name inline.
+    assert '--management-group-id "confidential_corp"' in sh
+    assert '--management-group-id "confidential_online"' in sh
+    assert '--management-group-id "confidential_corp"' in ps1
+    assert '--management-group-id "confidential_online"' in ps1
+
+
+def test_confidential_with_alias_uses_alias(tmp_path: Path) -> None:
+    """sovereignty-confidential-policies with alias uses the alias value."""
+    emitted: list[dict[str, object]] = [
+        {
+            "template": "sovereignty-confidential-policies",
+            "scope": "confidential_corp",
+            "bicep": "bicep/sovereignty-confidential-policies-confidential_corp.bicep",
+            "params": "params/sovereignty-confidential-policies-confidential_corp.parameters.json",
+            "rollout_phase": "audit",
+        },
+    ]
+    write_deploy_script(
+        out_dir=tmp_path,
+        emitted=emitted,
+        alias_map={"confidential_corp": "contoso-conf-corp"},
+    )
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    assert '--management-group-id "contoso-conf-corp"' in sh
+    assert '--management-group-id "contoso-conf-corp"' in ps1
+    assert 'MG_ID="<your-mg-id>"' not in sh
+    assert '$mgId = "<your-mg-id>"' not in ps1
     """policy-assignment / role-assignment inline their ``scope`` as a literal MG id.
 
     The scaffold engine writes the concrete target archetype id into

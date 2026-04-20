@@ -137,8 +137,8 @@ def test_deploy_commands_sovereignty_confidential_uses_per_scope_alias() -> None
     assert '"conf-corp-mg"' in pwsh
     assert '"conf-online-mg"' in pwsh
     # Both scopes get their own labelled section.
-    assert "confidential_corp -> conf-corp-mg" in pwsh
-    assert "confidential_online -> conf-online-mg" in pwsh
+    assert "confidential_corp" in pwsh and "conf-corp-mg" in pwsh
+    assert "confidential_online" in pwsh and "conf-online-mg" in pwsh
 
 
 def test_main_does_not_use_tenant_id_for_sovereign_root(tmp_path: Path) -> None:

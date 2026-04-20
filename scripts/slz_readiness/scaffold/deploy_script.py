@@ -226,11 +226,14 @@ def _plan_steps(
             mg_note = (
                 "Custom ALZ policyDefinitions — deploy at SLZ intermediate-root MG."
             )
-        elif template == "sovereignty-confidential-policies" and scope_name in alias_map:
-            resolved = alias_map[scope_name]
+        elif template == "sovereignty-confidential-policies" and scope_name:
+            resolved = alias_map.get(scope_name) or scope_name
             mg_bash_var = f'"{resolved}"'
             mg_pwsh_var = f'"{resolved}"'
-            mg_note = f"target MG resolved from mg_alias.json: {scope_name} -> {resolved}"
+            mg_note = (
+                f"target MG for confidential `{scope_name}`: {resolved} "
+                "(from mg_alias.json or canonical scope name)"
+            )
         elif template == "archetype-policies":
             # Archetype policies are per-archetype MG assignments. Without
             # per-scope resolution every archetype collapses onto a single

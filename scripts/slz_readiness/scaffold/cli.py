@@ -117,10 +117,7 @@ def _needs_generic_mg(
         }:
             continue
         scope_name = e.get("scope") or ""
-        if (
-            template == "sovereignty-confidential-policies"
-            and scope_name in alias_map
-        ):
+        if template == "sovereignty-confidential-policies" and scope_name:
             continue
         if template in {"policy-assignment", "role-assignment"} and scope_name:
             continue
@@ -244,14 +241,17 @@ def _deploy_commands(
                 "MUST precede any archetype / sovereignty policy-assignment "
                 "deployment."
             )
-        elif template == "sovereignty-confidential-policies" and scope_name in alias_map:
-            # The alias value is the customer's actual MG name for this
-            # confidential archetype; inline it so the operator doesn't
-            # have to remember which `$MG_ID` value to reuse per deploy.
-            resolved = alias_map[scope_name]
+        elif template == "sovereignty-confidential-policies" and scope_name:
+            # Resolve via alias when available; fall back to the canonical
+            # scope name (e.g. ``confidential_corp``) when the alias entry
+            # is null or absent. Matches the archetype-policies pattern.
+            resolved = alias_map.get(scope_name) or scope_name
             mg_bash_var = f'"{resolved}"'
             mg_pwsh_var = f'"{resolved}"'
-            mg_note = f"# target MG resolved from mg_alias.json: {scope_name} -> {resolved}"
+            mg_note = (
+                f"# target MG for confidential `{scope_name}`: {resolved} "
+                "(from mg_alias.json or canonical scope name)"
+            )
         elif template == "archetype-policies":
             # Each archetype-policies emission targets a distinct MG
             # (corp, online, identity, …). Without per-scope resolution
