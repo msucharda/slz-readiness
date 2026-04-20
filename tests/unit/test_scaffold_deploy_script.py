@@ -999,3 +999,89 @@ def test_whatif_only_reports_greenfield_guidance(tmp_path: Path) -> None:
     ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
     assert "--apply" in sh
     assert "-Apply" in ps1
+
+
+# ---------------------------------------------------------------------------
+# Two-stage deploy with token refresh
+# ---------------------------------------------------------------------------
+
+
+def test_token_refresh_between_stages(tmp_path: Path) -> None:
+    """--apply branch inserts az logout + az login between Stage 1 and Stage 2.
+
+    After creating management groups (Stage 1), the cached Azure AD token
+    doesn't include the new MGs. The token refresh ensures Stage 2 steps
+    (policies, assignments) can target the freshly-created MGs.
+    """
+    emitted = _mk_emitted(
+        "management-groups", "log-analytics", "alz-policy-definitions",
+        "sovereignty-global-policies", "archetype-policies",
+    )
+    write_deploy_script(out_dir=tmp_path, emitted=emitted, tenant_id="test-tenant")
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    # Bash: Stage 1 → token refresh → Stage 2
+    assert "Stage 1" in sh
+    assert "Token refresh" in sh
+    assert "Stage 2" in sh
+    assert "az logout" in sh
+    assert 'az login --tenant' in sh
+    # Stage ordering: Stage 1 < token refresh < Stage 2
+    s1_idx = sh.index("Stage 1")
+    refresh_idx = sh.index("Token refresh")
+    s2_idx = sh.index("Stage 2")
+    assert s1_idx < refresh_idx < s2_idx
+
+    # PS1: same structure
+    assert "Stage 1" in ps1
+    assert "Token refresh" in ps1
+    assert "Stage 2" in ps1
+    assert "az logout" in ps1
+    assert "az login --tenant" in ps1
+    ps1_s1 = ps1.index("Stage 1")
+    ps1_refresh = ps1.index("Token refresh")
+    ps1_s2 = ps1.index("Stage 2")
+    assert ps1_s1 < ps1_refresh < ps1_s2
+
+
+def test_stage1_only_skips_refresh(tmp_path: Path) -> None:
+    """When only Stage 1 templates are emitted, no token refresh block appears.
+
+    If there are no Stage 2 steps, the refresh is unnecessary and would just
+    slow the operator down with an interactive login prompt.
+    """
+    emitted = _mk_emitted("management-groups", "log-analytics")
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    # No token refresh or Stage 2 when only Stage 1 templates are present.
+    assert "Token refresh" not in sh
+    assert "Stage 2" not in sh
+    assert "Token refresh" not in ps1
+    assert "Stage 2" not in ps1
+
+
+def test_whatif_mode_has_no_token_refresh(tmp_path: Path) -> None:
+    """What-if-only mode (no --apply) never includes a token refresh.
+
+    No creates happen in what-if mode, so there's no stale token issue.
+    """
+    emitted = _mk_emitted(
+        "management-groups", "alz-policy-definitions", "archetype-policies",
+    )
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    # The what-if-only branch (else block) must not contain az logout/login.
+    sh_else_idx = sh.index("else")
+    sh_whatif_block = sh[sh_else_idx:]
+    assert "az logout" not in sh_whatif_block
+    assert "az login --tenant" not in sh_whatif_block
+
+    ps1_else_idx = ps1.index("} else {")
+    ps1_whatif_block = ps1[ps1_else_idx:]
+    assert "az logout" not in ps1_whatif_block
+    assert "az login --tenant" not in ps1_whatif_block

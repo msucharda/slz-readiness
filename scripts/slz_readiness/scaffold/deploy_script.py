@@ -136,6 +136,11 @@ _DEPLOY_ORDER: list[str] = [
     "role-assignment",
 ]
 
+# Templates deployed in Stage 1 (before token refresh). These either create
+# the MG hierarchy itself or are subscription-scoped (log-analytics) and don't
+# need the refreshed MG claims in the token. Everything else goes to Stage 2.
+_STAGE1_TEMPLATES: set[str] = {"management-groups", "log-analytics"}
+
 
 class _Step:
     """One ``what-if``/``create`` pair for a single emitted template.
@@ -376,11 +381,46 @@ def _render_sh(
     ]
     placeholder_check_sh = "\n".join(check_lines)
 
-    # --apply mode: per-step what-if → create (MGs are created before
-    # later steps try to what-if against them).
-    deploy_pairs = "\n\n".join(
-        _sh_deploy_pair(s, i + 1, len(steps)) for i, s in enumerate(steps)
+    # --apply mode: split into Stage 1 (MG hierarchy + subscription-scoped)
+    # and Stage 2 (everything else). A token refresh between stages ensures
+    # the Azure AD token includes the newly-created MGs in its claims.
+    stage1 = [(i, s) for i, s in enumerate(steps) if s.template in _STAGE1_TEMPLATES]
+    stage2 = [(i, s) for i, s in enumerate(steps) if s.template not in _STAGE1_TEMPLATES]
+    stage1_pairs = "\n\n".join(
+        _sh_deploy_pair(s, i + 1, len(steps)) for i, s in stage1
     )
+    stage2_pairs = "\n\n".join(
+        _sh_deploy_pair(s, i + 1, len(steps)) for i, s in stage2
+    )
+
+    # Build the token-refresh + stage 2 block. Only emitted when stage 2
+    # steps exist; otherwise the script deploys stage 1 and finishes.
+    if stage2:
+        refresh_and_stage2_sh = (
+            "\n"
+            "  # ==== Token refresh ====\n"
+            "  # After creating management groups, the cached Azure AD token may not\n"
+            "  # include the new MGs in its claims. ARM caches MG membership in the\n"
+            "  # token; a stale token causes ManagementGroupNotFound or\n"
+            "  # AuthorizationFailed on subsequent MG-scoped deployments. Logging out\n"
+            "  # and back in forces a fresh token with updated claims.\n"
+            "  echo \"\"\n"
+            '  echo "==> Token refresh (az logout + az login)"\n'
+            '  echo "    New MGs need a fresh token before Stage 2 can target them."\n'
+            "  az logout 2>/dev/null || true\n"
+            '  az login --tenant "$TENANT_EXPECTED"\n'
+            '  echo "    Token refreshed."\n'
+            "\n"
+            f"  # ==== Stage 2: policies & assignments ====\n"
+            "  echo \"\"\n"
+            f'  echo "==> Stage 2 ({len(stage2)} template(s): policies & assignments)"\n'
+            "  SECONDS=0\n"
+            f"  {stage2_pairs}\n"
+            "  echo \"\"\n"
+            '  echo "==> Stage 2 complete (${SECONDS}s)"'
+        )
+    else:
+        refresh_and_stage2_sh = ""
 
     # What-if-only mode: continue past individual failures so the operator
     # sees which steps succeed and which fail (greenfield: steps targeting
@@ -478,14 +518,15 @@ echo "    active tenant: $TENANT_CURRENT"
 echo ""
 
 if [[ "$APPLY" == "true" ]]; then
-  # ---- Per-step deploy: what-if then create for each template in order ----
-  # MGs created by step 1 exist before steps 3+ try to what-if against them.
-  echo "==> Wave 1 deploy ({len(steps)} template(s), per-step what-if then create)"
+  # ==== Stage 1: MG hierarchy + subscription-scoped resources ====
+  echo "==> Stage 1 ({len(stage1)} template(s): MG hierarchy + subscription-scoped)"
   SECONDS=0
-  {deploy_pairs}
-
+  {stage1_pairs}
   echo ""
-  echo "==> Wave 1 complete (total: ${{SECONDS}}s)"
+  echo "==> Stage 1 complete (${{SECONDS}}s)"
+{refresh_and_stage2_sh}
+  echo ""
+  echo "==> Wave 1 complete"
   echo "    Next steps:"
   {next_steps_block}
 else
@@ -637,10 +678,44 @@ def _render_ps1(
         )
     placeholder_check_ps1 = "\n".join(check_lines)
 
-    # --apply mode: per-step what-if → create
-    deploy_pairs = "\n\n".join(
-        _ps1_deploy_pair(s, i + 1, len(steps)) for i, s in enumerate(steps)
+    # --apply mode: split into Stage 1 and Stage 2 with token refresh
+    stage1 = [(i, s) for i, s in enumerate(steps) if s.template in _STAGE1_TEMPLATES]
+    stage2 = [(i, s) for i, s in enumerate(steps) if s.template not in _STAGE1_TEMPLATES]
+    stage1_pairs = "\n\n".join(
+        _ps1_deploy_pair(s, i + 1, len(steps)) for i, s in stage1
     )
+    stage2_pairs = "\n\n".join(
+        _ps1_deploy_pair(s, i + 1, len(steps)) for i, s in stage2
+    )
+
+    # Build the token-refresh + stage 2 block for PS1.
+    if stage2:
+        refresh_and_stage2_ps1 = (
+            "\n"
+            "    # ==== Token refresh ====\n"
+            "    # After creating management groups, the cached Azure AD token may not\n"
+            "    # include the new MGs in its claims. ARM caches MG membership in the\n"
+            "    # token; a stale token causes ManagementGroupNotFound or\n"
+            "    # AuthorizationFailed on subsequent MG-scoped deployments. Logging out\n"
+            "    # and back in forces a fresh token with updated claims.\n"
+            '    Write-Host ""\n'
+            '    Write-Host "==> Token refresh (az logout + az login)"\n'
+            '    Write-Host "    New MGs need a fresh token before Stage 2 can target them."\n'
+            "    az logout 2>$null\n"
+            "    az login --tenant $tenantExpected\n"
+            '    Write-Host "    Token refreshed."\n'
+            "\n"
+            "    # ==== Stage 2: policies & assignments ====\n"
+            '    Write-Host ""\n'
+            f'    Write-Host "==> Stage 2 ({len(stage2)} template(s): policies & assignments)"\n'
+            "    $swStage2 = [System.Diagnostics.Stopwatch]::StartNew()\n"
+            f"    {stage2_pairs}\n"
+            "    $swStage2.Stop()\n"
+            '    Write-Host ""\n'
+            '    Write-Host ("==> Stage 2 complete ({0}s)" -f [int]$swStage2.Elapsed.TotalSeconds)'
+        )
+    else:
+        refresh_and_stage2_ps1 = ""
 
     # What-if-only mode: continue past failures, report summary
     safe_whatif_steps = "\n\n".join(
@@ -738,15 +813,16 @@ Write-Host "    active tenant: $tenantCurrent"
 Write-Host ""
 
 if ($Apply) {{
-    # ---- Per-step deploy: what-if then create for each template in order ----
-    # MGs created by step 1 exist before steps 3+ try to what-if against them.
-    Write-Host "==> Wave 1 deploy ({len(steps)} template(s), per-step what-if then create)"
-    $swDeploy = [System.Diagnostics.Stopwatch]::StartNew()
-    {deploy_pairs}
-    $swDeploy.Stop()
-
+    # ==== Stage 1: MG hierarchy + subscription-scoped resources ====
+    Write-Host "==> Stage 1 ({len(stage1)} template(s): MG hierarchy + subscription-scoped)"
+    $swStage1 = [System.Diagnostics.Stopwatch]::StartNew()
+    {stage1_pairs}
+    $swStage1.Stop()
     Write-Host ""
-    Write-Host ("==> Wave 1 complete (total: {{0}}s)" -f [int]$swDeploy.Elapsed.TotalSeconds)
+    Write-Host ("==> Stage 1 complete ({{0}}s)" -f [int]$swStage1.Elapsed.TotalSeconds)
+{refresh_and_stage2_ps1}
+    Write-Host ""
+    Write-Host "==> Wave 1 complete"
     Write-Host "    Next steps:"
     {next_steps_block}
 }} else {{
