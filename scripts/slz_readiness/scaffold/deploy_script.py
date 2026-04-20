@@ -31,11 +31,96 @@ See ``.github/instructions/slz-readiness.instructions.md:13,38`` and
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .. import _trace
 from .template_registry import TEMPLATE_SCOPES
+
+
+@dataclass(frozen=True)
+class _Vars:
+    """Resolved defaults for the runbook's top-level variables.
+
+    Each ``*_is_placeholder`` flag is ``True`` when the renderer had to fall
+    back to a ``<...>`` sentinel because nothing in ``params_by_template`` /
+    ``alias_map`` / ``tenant_id`` could supply a concrete value. The
+    placeholder-check guard in the emitted scripts only references vars
+    whose flag is ``True`` — a fully-derived run emits zero angle-bracket
+    placeholders and zero guard lines.
+    """
+
+    location: str
+    location_is_placeholder: bool
+    tenant_root_mg: str
+    tenant_root_is_placeholder: bool
+    slz_root_mg: str
+    slz_root_is_placeholder: bool
+
+
+def _resolve_vars(
+    params_by_template: dict[str, dict[str, Any]] | None,
+    alias_map: dict[str, str] | None,
+    tenant_id: str | None,
+) -> _Vars:
+    """Derive runbook-level defaults from scaffold params + alias + tenant.
+
+    Precedence (highest → lowest):
+
+    * ``$location`` — ``sovereignty-global-policies.listOfAllowedLocations[0]``
+      (the modal region ``prefill_params`` writes), else
+      ``log-analytics.location``, else ``<your-region>`` placeholder.
+    * ``$tenantRootMgId`` — ``management-groups.parentManagementGroupId``
+      (prefill writes the observed parent of the SLZ root; falls back to
+      ``tenant_id`` for greenfield), else the supplied ``tenant_id``, else
+      ``<your-tenant-root-mg-id>`` placeholder.
+    * ``$slzRootMgId`` — ``alias_map["slz"]`` (same behaviour as before),
+      else ``<your-slz-root-mg-id>`` placeholder.
+
+    Pure function. No I/O. Safe to call multiple times.
+    """
+    params_by_template = params_by_template or {}
+    alias_map = alias_map or {}
+
+    # $location
+    location: str | None = None
+    sgp = params_by_template.get("sovereignty-global-policies") or {}
+    if isinstance(sgp, dict):
+        loc_list = sgp.get("listOfAllowedLocations")
+        if isinstance(loc_list, list) and loc_list:
+            first = loc_list[0]
+            if isinstance(first, str) and first:
+                location = first
+    if location is None:
+        la = params_by_template.get("log-analytics") or {}
+        if isinstance(la, dict):
+            la_loc = la.get("location")
+            if isinstance(la_loc, str) and la_loc:
+                location = la_loc
+
+    # $tenantRootMgId
+    tenant_root: str | None = None
+    mg_block = params_by_template.get("management-groups") or {}
+    if isinstance(mg_block, dict):
+        parent = mg_block.get("parentManagementGroupId")
+        if isinstance(parent, str) and parent:
+            tenant_root = parent
+    if tenant_root is None and isinstance(tenant_id, str) and tenant_id:
+        tenant_root = tenant_id
+
+    # $slzRootMgId
+    slz_alias = alias_map.get("slz")
+    slz_root = slz_alias if isinstance(slz_alias, str) and slz_alias else None
+
+    return _Vars(
+        location=location or "<your-region>",
+        location_is_placeholder=location is None,
+        tenant_root_mg=tenant_root or "<your-tenant-root-mg-id>",
+        tenant_root_is_placeholder=tenant_root is None,
+        slz_root_mg=slz_root or "<your-slz-root-mg-id>",
+        slz_root_is_placeholder=slz_root is None,
+    )
 
 # Canonical deploy order — re-declared here to avoid a circular import from
 # cli.py. Must stay in lockstep with cli._DEPLOY_ORDER; a golden test pins
@@ -171,6 +256,16 @@ def _plan_steps(
                 "hierarchy deploy: scope is the tenant-root MG (parent of slz). "
                 "For most tenants this equals the tenant id."
             )
+        elif template in {"policy-assignment", "role-assignment"} and scope_name:
+            # Scope field carries the concrete target MG id for these
+            # templates (set by the scaffold engine from the matched gap's
+            # archetype). Inline it directly so operators don't have to
+            # rebind a generic ``$MG_ID`` for every assignment deploy — the
+            # value was derived from findings + alias_map at scaffold time.
+            resolved = alias_map.get(scope_name) or scope_name
+            mg_bash_var = f'"{resolved}"'
+            mg_pwsh_var = f'"{resolved}"'
+            mg_note = f"target MG for {template}: {resolved}"
         steps.append(
             _Step(
                 template=template,
@@ -220,6 +315,7 @@ def _render_sh(
     *,
     alias_map: dict[str, str],
     tenant_id: str | None,
+    resolved: _Vars,
     needs_rg: bool,
     needs_slz_root: bool,
     needs_tenant_root: bool,
@@ -232,40 +328,43 @@ def _render_sh(
     additionally runs create after every what-if succeeds. Fail-fast via
     ``set -euo pipefail``; first non-zero aborts.
 
-    When ``tenant_id`` is known (from Discover ``--tenant``), it is
-    inlined as the ``TENANT_EXPECTED`` default and as the default for
-    ``TENANT_ROOT_MG_ID`` (the tenant-root MG id equals the tenant id
-    for the overwhelming majority of tenants). Tenant ids are not
-    secrets — they are visible in every Azure Portal URL and JWT — and
-    inlining them eliminates the single most common failure mode of the
-    emitted runbook (operator forgets to edit the Variables block).
+    Variables at the top of the script are pre-filled from the scaffold
+    params (``$location``, ``$tenantRootMgId``, ``$slzRootMgId``) when
+    the values were derivable from findings + alias_map + run_scope —
+    see :func:`_resolve_vars`. Operators no longer need to retype values
+    they already accepted during the Scaffold phase; ``what-if`` is the
+    review gate before ``--apply``.
+
+    The angle-bracket fail-fast guard still runs for any variable that
+    could NOT be derived (empty findings, missing alias). On Windows az
+    is a .cmd wrapper and cmd.exe treats a literal ``<foo>`` as input
+    redirection, which would otherwise masquerade as a phantom success.
     """
     tenant_default = tenant_id or "<tenant-id>"
     brownfield_block = _sh_brownfield_block(alias_map) if alias_map else ""
-    var_lines: list[str] = ['LOCATION="<your-region>"']
-    placeholder_vars: list[str] = ["LOCATION"]
+    var_lines: list[str] = [f'LOCATION="{resolved.location}"']
+    placeholder_vars: list[str] = []
+    if resolved.location_is_placeholder:
+        placeholder_vars.append("LOCATION")
     if needs_generic_mg:
         var_lines.insert(0, 'MG_ID="<your-mg-id>"')
         placeholder_vars.insert(0, "MG_ID")
     if needs_slz_root:
-        slz_default = alias_map.get("slz", "<your-slz-root-mg-id>")
-        var_lines.append(f'SLZ_ROOT_MG_ID="{slz_default}"')
-        if slz_default.startswith("<") and slz_default.endswith(">"):
+        var_lines.append(f'SLZ_ROOT_MG_ID="{resolved.slz_root_mg}"')
+        if resolved.slz_root_is_placeholder:
             placeholder_vars.append("SLZ_ROOT_MG_ID")
     if needs_tenant_root:
-        tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
-        var_lines.append(f'TENANT_ROOT_MG_ID="{tenant_root_default}"')
-        if tenant_root_default.startswith("<") and tenant_root_default.endswith(">"):
+        var_lines.append(f'TENANT_ROOT_MG_ID="{resolved.tenant_root_mg}"')
+        if resolved.tenant_root_is_placeholder:
             placeholder_vars.append("TENANT_ROOT_MG_ID")
     if needs_rg:
         var_lines.append('RG_NAME="<your-resource-group>"')
         placeholder_vars.append("RG_NAME")
     vars_block = "\n".join(var_lines)
 
-    # Fail-fast if any angle-bracket placeholder survived. On Windows,
-    # az is a .cmd wrapper and cmd.exe treats ``<`` in the argument
-    # ``<your-region>`` as input redirection — yielding "The system
-    # cannot find the file specified." and a silent *apparent* success.
+    # Fail-fast only on vars that remained placeholders (nothing was
+    # derivable). A fully-prefilled run emits an empty check block so
+    # the operator isn't prompted to edit values that are already correct.
     check_lines = [
         f'if [[ "${{{v}}}" == "<"*">" ]]; then '
         f'echo "ERROR: {v} still holds the placeholder \\"${{{v}}}\\". '
@@ -429,6 +528,7 @@ def _render_ps1(
     *,
     alias_map: dict[str, str],
     tenant_id: str | None,
+    resolved: _Vars,
     needs_rg: bool,
     needs_slz_root: bool,
     needs_tenant_root: bool,
@@ -437,25 +537,25 @@ def _render_ps1(
 ) -> str:
     """Render ``deploy-all.ps1``.
 
-    Symmetric to ``_render_sh``; see that docstring for the tenant-id
-    inlining rationale.
+    Symmetric to ``_render_sh``; see that docstring for the prefill
+    rationale.
     """
     tenant_default = tenant_id or "<tenant-id>"
     brownfield_block = _ps1_brownfield_block(alias_map) if alias_map else ""
-    var_lines: list[str] = ['$location = "<your-region>"']
-    placeholder_vars: list[str] = ["location"]
+    var_lines: list[str] = [f'$location = "{resolved.location}"']
+    placeholder_vars: list[str] = []
+    if resolved.location_is_placeholder:
+        placeholder_vars.append("location")
     if needs_generic_mg:
         var_lines.insert(0, '$mgId = "<your-mg-id>"')
         placeholder_vars.insert(0, "mgId")
     if needs_slz_root:
-        slz_default = alias_map.get("slz", "<your-slz-root-mg-id>")
-        var_lines.append(f'$slzRootMgId = "{slz_default}"')
-        if slz_default.startswith("<") and slz_default.endswith(">"):
+        var_lines.append(f'$slzRootMgId = "{resolved.slz_root_mg}"')
+        if resolved.slz_root_is_placeholder:
             placeholder_vars.append("slzRootMgId")
     if needs_tenant_root:
-        tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
-        var_lines.append(f'$tenantRootMgId = "{tenant_root_default}"')
-        if tenant_root_default.startswith("<") and tenant_root_default.endswith(">"):
+        var_lines.append(f'$tenantRootMgId = "{resolved.tenant_root_mg}"')
+        if resolved.tenant_root_is_placeholder:
             placeholder_vars.append("tenantRootMgId")
     if needs_rg:
         var_lines.append('$rgName = "<your-resource-group>"')
@@ -729,11 +829,19 @@ def write_deploy_script(
     emitted: list[dict[str, Any]],
     alias_map: dict[str, str] | None = None,
     tenant_id: str | None = None,
+    params_by_template: dict[str, dict[str, Any]] | None = None,
 ) -> list[str]:
     """Emit ``deploy-all.{ps1,sh}`` (+ optional DINE grant pair) into ``out_dir/runbooks/``.
 
     Returns the list of emitted paths (relative to ``out_dir``). Returns an
     empty list when ``emitted`` is empty (nothing to orchestrate).
+
+    ``params_by_template`` — the merged scaffold params dict (same shape
+    ``prefill_params`` returns: ``{template: {param: value, ...}}``). When
+    supplied, :func:`_resolve_vars` uses it to pre-fill ``$location``,
+    ``$tenantRootMgId``, and ``$slzRootMgId`` at emit time. Omitting it
+    falls back to angle-bracket placeholders (preserves backwards-compat
+    for direct callers and tests that don't exercise prefill).
 
     The agent is still blocked from executing the emitted scripts by
     ``hooks/pre_tool_use.py`` — this function writes them for the human
@@ -745,18 +853,17 @@ def write_deploy_script(
     steps = _plan_steps(emitted, alias_map=alias_map)
     if not steps:
         return []
+    resolved = _resolve_vars(params_by_template, alias_map, tenant_id)
     needs_rg = any(s.scope == "resourceGroup" for s in steps)
     needs_slz_root = any(
         s.template in {"sovereignty-global-policies", "alz-policy-definitions"} for s in steps
     )
     needs_tenant_root = any(s.template == "management-groups" for s in steps)
     # Generic ``$mgId`` / ``$MG_ID`` is only referenced when a MG-scoped step
-    # has no template-specific resolution (e.g. policy-assignment /
-    # role-assignment, or sovereignty-confidential-policies without a
-    # matching mg_alias entry). Emitting the variable + placeholder guard
-    # unconditionally caused ``deploy-all.ps1`` to abort with
-    # "mgId still holds the placeholder '<your-mg-id>'" on runs where no
-    # step actually used it.
+    # has no template-specific resolution. With per-step inlining for
+    # policy-assignment + role-assignment (see _plan_steps), this is
+    # typically empty in practice — the variable + guard are only emitted
+    # when some step genuinely has no resolvable scope.
     needs_generic_mg = any(
         s.scope == "managementGroup" and s.mg_pwsh_var is None for s in steps
     )
@@ -770,6 +877,7 @@ def write_deploy_script(
         steps,
         alias_map=alias_map,
         tenant_id=tenant_id,
+        resolved=resolved,
         needs_rg=needs_rg,
         needs_slz_root=needs_slz_root,
         needs_tenant_root=needs_tenant_root,
@@ -784,6 +892,7 @@ def write_deploy_script(
         steps,
         alias_map=alias_map,
         tenant_id=tenant_id,
+        resolved=resolved,
         needs_rg=needs_rg,
         needs_slz_root=needs_slz_root,
         needs_tenant_root=needs_tenant_root,

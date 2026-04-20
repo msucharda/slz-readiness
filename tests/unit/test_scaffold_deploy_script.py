@@ -255,11 +255,28 @@ def test_mg_variable_resolution_parity_with_cli() -> None:
             "rule_ids": [],
             "rollout_phase": "audit",
         },
+        {
+            "template": "policy-assignment",
+            "scope": "corp",
+            "bicep": "bicep/policy-assignment.bicep",
+            "params": "params/policy-assignment.parameters.json",
+            "rule_ids": [],
+            "rollout_phase": "audit",
+        },
+        {
+            "template": "role-assignment",
+            "scope": "online",
+            "bicep": "bicep/role-assignment.bicep",
+            "params": "params/role-assignment.parameters.json",
+            "rule_ids": [],
+            "rollout_phase": "audit",
+        },
     ]
     alias_map = {
         "slz": "alz",
         "confidential_corp": "conf-corp",
         "corp": "corp",
+        "online": "online",
     }
 
     steps = _plan_steps(emitted, alias_map=alias_map)
@@ -274,6 +291,8 @@ def test_mg_variable_resolution_parity_with_cli() -> None:
         "sovereignty-global-policies": "$SLZ_ROOT_MG_ID",
         "sovereignty-confidential-policies": '"conf-corp"',
         "archetype-policies": '"corp"',
+        "policy-assignment": '"corp"',
+        "role-assignment": '"online"',
     }
     for step in steps:
         token = expected_bash[step.template]
@@ -340,11 +359,26 @@ def test_needs_generic_mg_parity_with_cli() -> None:
     assert _deploy_side(no_generic, alias) is False
     assert _cli_side(no_generic, alias) == _deploy_side(no_generic, alias)
 
-    # Case 2: policy-assignment falls through -> generic MG required.
-    with_generic = [
+    # Case 2: policy-assignment with a concrete scope inlines its target
+    # archetype MG -> no generic MG needed.
+    no_generic_assignment = [
         {"template": "management-groups", "scope": "tenant",
          "bicep": "", "params": "", "rule_ids": []},
         {"template": "policy-assignment", "scope": "corp",
+         "bicep": "", "params": "", "rule_ids": []},
+        {"template": "role-assignment", "scope": "online",
+         "bicep": "", "params": "", "rule_ids": []},
+    ]
+    assert _cli_side(no_generic_assignment, alias) is False
+    assert _deploy_side(no_generic_assignment, alias) is False
+
+    # Case 2b: policy-assignment with an empty scope (the rare
+    # scope-less fallback) still needs the generic ``$MG_ID`` — the
+    # scaffold engine couldn't bind it to a concrete archetype.
+    with_generic = [
+        {"template": "management-groups", "scope": "tenant",
+         "bicep": "", "params": "", "rule_ids": []},
+        {"template": "policy-assignment", "scope": "",
          "bicep": "", "params": "", "rule_ids": []},
     ]
     assert _cli_side(with_generic, alias) is True
@@ -662,3 +696,124 @@ def test_generic_mg_id_omitted_when_unused(tmp_path: Path) -> None:
     assert '$mgId = "<your-mg-id>"' not in ps1
     assert '"MG_ID still holds the placeholder' not in sh
     assert '"mgId still holds the placeholder' not in ps1
+
+
+def test_params_by_template_fills_location_and_roots(tmp_path: Path) -> None:
+    """Full prefill → zero ``<...>`` placeholders + zero placeholder_check lines.
+
+    When the scaffold phase has derived a concrete ``listOfAllowedLocations``
+    (modal region) + ``parentManagementGroupId`` + ``slz`` alias, the
+    emitted runbook must inline those values directly. Operators no longer
+    need to edit the Variables block before running ``--apply``; ``what-if``
+    is the review gate (see deploy_script.py module docstring).
+    """
+    emitted = _mk_emitted(
+        "management-groups",
+        "alz-policy-definitions",
+        "sovereignty-global-policies",
+        "archetype-policies",
+    )
+    params_by_template = {
+        "sovereignty-global-policies": {
+            "listOfAllowedLocations": ["swedencentral", "westeurope"],
+        },
+        "management-groups": {"parentManagementGroupId": "contoso-root"},
+    }
+    write_deploy_script(
+        out_dir=tmp_path,
+        emitted=emitted,
+        alias_map={"slz": "contoso-alz"},
+        tenant_id="99554ba8-f985-4a2d-be21-fc3a62570dd4",
+        params_by_template=params_by_template,
+    )
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    # Variables block pre-filled from scaffold params.
+    assert 'LOCATION="swedencentral"' in sh
+    assert '$location = "swedencentral"' in ps1
+    assert 'SLZ_ROOT_MG_ID="contoso-alz"' in sh
+    assert '$slzRootMgId = "contoso-alz"' in ps1
+    assert 'TENANT_ROOT_MG_ID="contoso-root"' in sh
+    assert '$tenantRootMgId = "contoso-root"' in ps1
+
+    # No residual angle-bracket placeholders in the Variables block.
+    assert '"<your-region>"' not in sh
+    assert '"<your-slz-root-mg-id>"' not in sh
+    assert '"<your-tenant-root-mg-id>"' not in sh
+
+    # Placeholder guard is only emitted for vars that stayed as ``<...>``;
+    # a fully-derived run emits no guard lines at all.
+    assert "still holds the placeholder" not in sh
+    assert "still holds the placeholder" not in ps1
+
+
+def test_policy_assignment_scope_inlined_as_literal(tmp_path: Path) -> None:
+    """policy-assignment / role-assignment inline their ``scope`` as a literal MG id.
+
+    The scaffold engine writes the concrete target archetype id into
+    ``scope`` at emit time. _plan_steps lifts that value through
+    ``alias_map`` (brownfield rename) and binds it directly to the
+    ``--management-group-id`` flag, eliminating the need for operators
+    to retype a generic ``$MG_ID`` between assignments.
+    """
+    emitted = [
+        {
+            "template": "policy-assignment",
+            "scope": "corp",
+            "bicep": "bicep/policy-assignment.bicep",
+            "params": "bicep/policy-assignment.parameters.json",
+            "rollout_phase": "audit",
+        },
+        {
+            "template": "role-assignment",
+            "scope": "online",
+            "bicep": "bicep/role-assignment.bicep",
+            "params": "bicep/role-assignment.parameters.json",
+            "rollout_phase": "audit",
+        },
+    ]
+    write_deploy_script(
+        out_dir=tmp_path,
+        emitted=emitted,
+        alias_map={"corp": "contoso-corp", "online": "contoso-online"},
+    )
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    # Literal MG ids bound directly in the az deployment mg command.
+    assert "--management-group-id \"contoso-corp\"" in sh
+    assert "--management-group-id \"contoso-online\"" in sh
+    assert "--management-group-id \"contoso-corp\"" in ps1
+    assert "--management-group-id \"contoso-online\"" in ps1
+
+    # Generic ``$MG_ID`` / ``$mgId`` is not declared because every step
+    # resolved to a concrete literal.
+    assert 'MG_ID="<your-mg-id>"' not in sh
+    assert '$mgId = "<your-mg-id>"' not in ps1
+
+
+def test_empty_params_falls_back_to_placeholders(tmp_path: Path) -> None:
+    """Empty-findings runs (no params, no alias, no tenant) keep placeholders.
+
+    The residual angle-bracket guard is still the final safety net when
+    the scaffold phase has nothing to derive values from — e.g. a dry-run
+    against an empty findings.json. The guard must still fire on the
+    unfilled vars.
+    """
+    emitted = _mk_emitted(
+        "management-groups",
+        "alz-policy-definitions",
+        "sovereignty-global-policies",
+    )
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    assert 'LOCATION="<your-region>"' in sh
+    assert '$location = "<your-region>"' in ps1
+    assert 'SLZ_ROOT_MG_ID="<your-slz-root-mg-id>"' in sh
+    assert 'TENANT_ROOT_MG_ID="<your-tenant-root-mg-id>"' in sh
+    # Guard still fires on residual placeholders.
+    assert "LOCATION still holds the placeholder" in sh
+    assert "location still holds the placeholder" in ps1

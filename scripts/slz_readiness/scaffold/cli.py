@@ -9,6 +9,7 @@ from typing import Any
 import click
 
 from .. import _summary, _trace
+from .deploy_script import _resolve_vars, write_deploy_script
 from .engine import ScaffoldError, scaffold_for_gaps
 from .prefill import (
     classify_keys,
@@ -98,8 +99,10 @@ def _needs_generic_mg(
     ``archetype-policies`` (literal archetype MG name), and
     ``sovereignty-confidential-policies`` when its per-scope hint
     (``confidential_corp`` / ``confidential_online``) resolves via
-    ``alias_map``. Everything else (policy-assignment, role-assignment,
-    confidential-policies without alias) still uses ``$MG_ID``.
+    ``alias_map``. ``policy-assignment`` / ``role-assignment`` also bind
+    their dedicated MG directly from the manifest ``scope`` field (the
+    scaffold engine writes the concrete target archetype id there), so
+    they no longer need the generic ``$MG_ID`` either.
     """
     for e in by_order:
         template = e.get("template", "")
@@ -113,10 +116,13 @@ def _needs_generic_mg(
             "management-groups",
         }:
             continue
+        scope_name = e.get("scope") or ""
         if (
             template == "sovereignty-confidential-policies"
-            and (e.get("scope") or "") in alias_map
+            and scope_name in alias_map
         ):
+            continue
+        if template in {"policy-assignment", "role-assignment"} and scope_name:
             continue
         return True
     return False
@@ -127,6 +133,7 @@ def _deploy_commands(
     *,
     tenant_id: str | None = None,
     alias_map: dict[str, str] | None = None,
+    params_by_template: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, list[str]]:
     """Build the ``what-if`` + ``create`` command blocks in both Bash and PowerShell.
 
@@ -164,6 +171,7 @@ def _deploy_commands(
     root itself.
     """
     alias_map = alias_map or {}
+    resolved_vars = _resolve_vars(params_by_template, alias_map, tenant_id)
     by_order = sorted(
         emitted,
         key=lambda e: (
@@ -187,16 +195,14 @@ def _deploy_commands(
     if needs_generic_mg:
         bash_lines.append('MG_ID="<your-mg-id>"')
         pwsh_lines.append('$mgId = "<your-mg-id>"')
-    bash_lines.append('LOCATION="<your-region>"')
-    pwsh_lines.append('$location = "<your-region>"')
+    bash_lines.append(f'LOCATION="{resolved_vars.location}"')
+    pwsh_lines.append(f'$location = "{resolved_vars.location}"')
     if needs_slz_root:
-        slz_default = slz_alias or "<your-slz-root-mg-id>"
-        bash_lines.append(f'SLZ_ROOT_MG_ID="{slz_default}"')
-        pwsh_lines.append(f'$slzRootMgId = "{slz_default}"')
+        bash_lines.append(f'SLZ_ROOT_MG_ID="{resolved_vars.slz_root_mg}"')
+        pwsh_lines.append(f'$slzRootMgId = "{resolved_vars.slz_root_mg}"')
     if needs_tenant_root:
-        tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
-        bash_lines.append(f'TENANT_ROOT_MG_ID="{tenant_root_default}"')
-        pwsh_lines.append(f'$tenantRootMgId = "{tenant_root_default}"')
+        bash_lines.append(f'TENANT_ROOT_MG_ID="{resolved_vars.tenant_root_mg}"')
+        pwsh_lines.append(f'$tenantRootMgId = "{resolved_vars.tenant_root_mg}"')
     if needs_rg:
         bash_lines.append('RG_NAME="<your-resource-group>"')
         pwsh_lines.append('$rgName = "<your-resource-group>"')
@@ -258,6 +264,15 @@ def _deploy_commands(
                 f"# target MG for archetype `{scope_name}`: {resolved} "
                 "(from mg_alias.json or canonical archetype name)"
             )
+        elif template in {"policy-assignment", "role-assignment"} and scope_name:
+            # Scope carries the concrete target archetype MG id (from
+            # the matched gap). Inline it so the generic ``$MG_ID``
+            # variable isn't needed — the scaffold engine already knows
+            # exactly where each assignment must land.
+            resolved = alias_map.get(scope_name) or scope_name
+            mg_bash_var = f'"{resolved}"'
+            mg_pwsh_var = f'"{resolved}"'
+            mg_note = f"# target MG for {template}: {resolved}"
         elif template == "management-groups":
             # The MG hierarchy deploys *into* the tenant-root MG (which
             # equals the tenant id for most tenants), not an archetype.
@@ -335,6 +350,7 @@ def _write_how_to_deploy(
     rewrite_names: bool = False,
     tenant_id: str | None = None,
     emit_deploy_script: bool = False,
+    params_by_template: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """Emit ``how-to-deploy.md`` with Wave-1/Wave-2 recipes in Bash + PowerShell.
 
@@ -360,7 +376,12 @@ def _write_how_to_deploy(
     # sovereignty-global-policies silently landed two levels too high.
     # See slz-demo run 20260419T120215Z (findings C3 + H1).
     alias_map = _load_alias_for_doc(run_dir)
-    cmds = _deploy_commands(emitted, tenant_id=tenant_id, alias_map=alias_map)
+    cmds = _deploy_commands(
+        emitted,
+        tenant_id=tenant_id,
+        alias_map=alias_map,
+        params_by_template=params_by_template,
+    )
     has_dine = any(e.get("template") in {"archetype-policies"} for e in emitted)
     has_phased = any(e.get("rollout_phase") for e in emitted)
     needs_rg = any(
@@ -386,9 +407,9 @@ def _write_how_to_deploy(
         ),
     )
     needs_generic_mg = _needs_generic_mg(_by_order, alias_map)
-    tenant_root_default = tenant_id or "<your-tenant-root-mg-id>"
-    slz_alias = alias_map.get("slz")
-    slz_root_default = slz_alias or "<your-slz-root-mg-id>"
+    resolved = _resolve_vars(params_by_template, alias_map, tenant_id)
+    tenant_root_default = resolved.tenant_root_mg
+    slz_root_default = resolved.slz_root_mg
     mg_runbooks = [
         rb
         for e in emitted
@@ -637,7 +658,7 @@ def _write_how_to_deploy(
     parts.append("az account set --subscription <subscription-id>")
     if needs_generic_mg:
         parts.append("$mgId = \"<your-mg-id>\"")
-    parts.append("$location = \"<your-region>\"  # e.g. westeurope")
+    parts.append(f"$location = \"{resolved.location}\"  # pre-filled from scaffold params")
     if needs_slz_root:
         parts.append(
             f"$slzRootMgId = \"{slz_root_default}\""
@@ -658,7 +679,7 @@ def _write_how_to_deploy(
     parts.append("az account set --subscription <subscription-id>")
     if needs_generic_mg:
         parts.append("MG_ID=\"<your-mg-id>\"")
-    parts.append("LOCATION=\"<your-region>\"  # e.g. westeurope")
+    parts.append(f"LOCATION=\"{resolved.location}\"  # pre-filled from scaffold params")
     if needs_slz_root:
         parts.append(
             f"SLZ_ROOT_MG_ID=\"{slz_root_default}\""
@@ -1341,14 +1362,15 @@ def main(
             rewrite_names=resolved_rewrite_names,
             tenant_id=tenant_id,
             emit_deploy_script=emit_deploy_script,
+            params_by_template=params_by_template,
         )
         if emit_deploy_script:
-            from .deploy_script import write_deploy_script
             write_deploy_script(
                 out_dir=out_dir,
                 emitted=emitted,
                 alias_map=_alias_for_doc,
                 tenant_id=tenant_id,
+                params_by_template=params_by_template,
             )
         _write_run_rollup(out_dir)
     click.echo(f"Emitted {len(emitted)} templates -> {out_dir}")

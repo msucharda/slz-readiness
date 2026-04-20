@@ -38,7 +38,7 @@ Three-OS CI matrix (Linux/macOS/Windows); changes touching `discover/az_common.p
 | `.github/agents/`, `.github/skills/`, `.github/prompts/` | Plugin surface |
 | `hooks/` | Pre/post tool-use guards |
 | `scripts/slz_readiness/` | Python package (discover, evaluate, plan, scaffold; shared `_summary.py`) |
-| `scripts/slz_readiness/scaffold/deploy_script.py` | v0.14.0 opt-in: emits `runbooks/deploy-all.{ps1,sh}` one-shot orchestrator (and `grant-dine-roles.{ps1,sh}` post-hook when archetype-policies is in scope). Gated by `--emit-deploy-script`; blocked from agent execution by `hooks/pre_tool_use.py`. |
+| `scripts/slz_readiness/scaffold/deploy_script.py` | v0.14.0 opt-in: emits `runbooks/deploy-all.{ps1,sh}` one-shot orchestrator (and `grant-dine-roles.{ps1,sh}` post-hook when archetype-policies is in scope). Top-level variables (`$location`, `$tenantRootMgId`, `$slzRootMgId`, per-step MG ids for policy/role-assignment) are pre-filled from scaffold params at emit time — operators only edit the residual `<...>` placeholders when scaffold couldn't derive a value. Gated by `--emit-deploy-script`; blocked from agent execution by `hooks/pre_tool_use.py`. |
 | `scripts/evaluate/rules/` | 14 rule YAMLs (add rules here, YAML-only) |
 | `scripts/scaffold/avm_templates/` | 7 Bicep templates + param schemas |
 | `data/baseline/alz-library/` | Vendored ALZ Library (pinned SHA) — do NOT hand-edit |
