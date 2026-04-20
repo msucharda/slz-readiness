@@ -24,6 +24,9 @@ plugin-pack/
 # Run artifacts (per-invocation; never committed)
 artifacts/
 
+# Node
+node_modules/
+
 # Editor / OS
 .vscode/
 .idea/
