@@ -57,16 +57,20 @@ def test_emits_both_shells(tmp_path: Path) -> None:
 
 
 def test_what_if_precedes_create(tmp_path: Path) -> None:
-    """For every template, what-if must appear before create in the rendered file."""
+    """In --apply mode, each template's what-if appears before its create."""
     emitted = _mk_emitted("management-groups", "log-analytics", "archetype-policies")
     write_deploy_script(out_dir=tmp_path, emitted=emitted)
     sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
-    # what-if pass is emitted as a block before the APPLY gate; create pass after it.
-    assert sh.index("what-if pass") < sh.index("create pass")
-    # APPLY gate must sit between the two — i.e., the bash script must early-return
-    # on what-if-only mode so the create block is only reached under --apply.
-    gate = sh.index('if [[ "$APPLY" != "true" ]]')
-    assert sh.index("what-if pass") < gate < sh.index("create pass")
+    # The --apply branch is a per-step deploy block where what-if precedes create.
+    # The APPLY gate separates the two modes.
+    assert 'if [[ "$APPLY" == "true" ]]' in sh
+    # In the --apply branch, each template's what-if comes before its create.
+    apply_idx = sh.index('if [[ "$APPLY" == "true" ]]')
+    apply_block = sh[apply_idx:]
+    for tmpl in ("management-groups", "log-analytics", "archetype-policies"):
+        tmpl_start = apply_block.index(f"{tmpl}")
+        after_tmpl = apply_block[tmpl_start:]
+        assert "what-if" in after_tmpl[:200]
 
 
 def test_canonical_deploy_order_preserved(tmp_path: Path) -> None:
@@ -584,13 +588,14 @@ def test_management_groups_uses_tenant_root_var(tmp_path: Path) -> None:
     assert '$tenantRootMgId = "<your-tenant-root-mg-id>"' in ps1
 
     # The management-groups step must use the tenant-root variable.
-    sh_mg_idx = sh.index("management-groups")
+    # Skip header comment hits — search for the actual deploy step echo line.
+    sh_mg_idx = sh.index("--> [1/1] management-groups")
     sh_mg_block = sh[sh_mg_idx : sh_mg_idx + 800]
     assert "$TENANT_ROOT_MG_ID" in sh_mg_block
     # ...and not the plain $MG_ID
     assert "--management-group-id \"$MG_ID\"" not in sh_mg_block
 
-    ps1_mg_idx = ps1.index("management-groups")
+    ps1_mg_idx = ps1.index("--> [1/1] management-groups")
     ps1_mg_block = ps1[ps1_mg_idx : ps1_mg_idx + 800]
     assert "$tenantRootMgId" in ps1_mg_block
 
@@ -909,3 +914,88 @@ def test_empty_params_falls_back_to_placeholders(tmp_path: Path) -> None:
     # Guard still fires on residual placeholders.
     assert "LOCATION still holds the placeholder" in sh
     assert "location still holds the placeholder" in ps1
+
+
+# ---------------------------------------------------------------------------
+# v0.15.0: per-step deploy + continue-on-error what-if
+# ---------------------------------------------------------------------------
+
+
+def test_apply_mode_interleaves_per_step(tmp_path: Path) -> None:
+    """--apply branch pairs what-if + create for each step sequentially.
+
+    In greenfield, templates 3+ target MGs created by template 1. The per-step
+    pattern ensures management-groups is created before later steps try to
+    what-if against those MGs.
+    """
+    emitted = _mk_emitted("management-groups", "log-analytics", "archetype-policies")
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    # Bash: the --apply branch contains per-step what-if→create pairs.
+    apply_gate = sh.index('if [[ "$APPLY" == "true" ]]')
+    else_gate = sh.index("else", apply_gate)
+    apply_block = sh[apply_gate:else_gate]
+    # management-groups: what-if appears before create within the block.
+    mg_whatif = apply_block.index("management-groups")  # first mention is what-if
+    mg_create_search = apply_block[mg_whatif + 1:]
+    # After first management-groups mention (what-if), find "create" before next template
+    assert "what-if" in apply_block[mg_whatif : mg_whatif + 300]
+    assert "create" in mg_create_search[:600]
+
+    # PS1: the -Apply branch contains per-step deploy pairs.
+    ps1_apply_gate = ps1.index("if ($Apply)")
+    ps1_else_gate = ps1.index("} else {", ps1_apply_gate)
+    ps1_apply_block = ps1[ps1_apply_gate:ps1_else_gate]
+    assert "management-groups" in ps1_apply_block
+    assert "what-if" in ps1_apply_block
+    assert "create" in ps1_apply_block
+
+
+def test_whatif_only_continues_past_errors(tmp_path: Path) -> None:
+    """What-if-only branch renders all steps with continue-on-error wrapping.
+
+    Greenfield: steps targeting not-yet-created MGs fail, but the script
+    continues to the next step and reports a summary.
+    """
+    emitted = _mk_emitted(
+        "management-groups", "log-analytics", "alz-policy-definitions",
+        "sovereignty-global-policies", "archetype-policies",
+    )
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    # Bash: the what-if-only branch uses set +e and WHATIF_FAILED counter.
+    assert "set +e" in sh
+    assert "WHATIF_FAILED" in sh
+    # Every emitted template appears in the what-if branch (not skipped on
+    # first error).
+    else_idx = sh.index("else")
+    whatif_block = sh[else_idx:]
+    for tmpl in ("management-groups", "log-analytics", "alz-policy-definitions",
+                 "sovereignty-global-policies", "archetype-policies"):
+        assert tmpl in whatif_block, f"{tmpl} missing from what-if block"
+    # Summary line present.
+    assert "succeeded" in whatif_block
+    assert "failed" in whatif_block
+
+    # PS1: the what-if-only branch uses try/catch and $whatifFailed counter.
+    assert "$whatifFailed" in ps1
+    ps1_else_idx = ps1.index("} else {")
+    ps1_whatif_block = ps1[ps1_else_idx:]
+    for tmpl in ("management-groups", "log-analytics", "alz-policy-definitions",
+                 "sovereignty-global-policies", "archetype-policies"):
+        assert tmpl in ps1_whatif_block, f"{tmpl} missing from ps1 what-if block"
+    assert "succeeded" in ps1_whatif_block
+
+
+def test_whatif_only_reports_greenfield_guidance(tmp_path: Path) -> None:
+    """What-if summary tells greenfield operators to use --apply / -Apply."""
+    emitted = _mk_emitted("management-groups", "archetype-policies")
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+    assert "--apply" in sh
+    assert "-Apply" in ps1

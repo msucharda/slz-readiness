@@ -376,8 +376,18 @@ def _render_sh(
     ]
     placeholder_check_sh = "\n".join(check_lines)
 
-    whatif_steps = "\n\n".join(_sh_step_block(s, "what-if", i + 1, len(steps)) for i, s in enumerate(steps))
-    create_steps = "\n\n".join(_sh_step_block(s, "create", i + 1, len(steps)) for i, s in enumerate(steps))
+    # --apply mode: per-step what-if → create (MGs are created before
+    # later steps try to what-if against them).
+    deploy_pairs = "\n\n".join(
+        _sh_deploy_pair(s, i + 1, len(steps)) for i, s in enumerate(steps)
+    )
+
+    # What-if-only mode: continue past individual failures so the operator
+    # sees which steps succeed and which fail (greenfield: steps targeting
+    # not-yet-created MGs are expected to fail).
+    safe_whatif_steps = "\n\n".join(
+        _sh_step_block_safe(s, i + 1, len(steps)) for i, s in enumerate(steps)
+    )
 
     # Emit the "Next steps" footer as a sequence of independent ``echo``
     # statements. The prior implementation interpolated step 2 inside
@@ -406,9 +416,17 @@ def _render_sh(
 # You, the operator, run this script yourself.
 #
 # Usage:
-#   ./deploy-all.sh                          # what-if every template (safe)
-#   ./deploy-all.sh --apply                  # run create after every what-if succeeds
+#   ./deploy-all.sh                          # what-if every template (continue-on-error)
+#   ./deploy-all.sh --apply                  # per-step what-if then create (fail-fast)
 #   ./deploy-all.sh --apply --skip-mg-prereq # bypass brownfield alias gate
+#
+# --apply deploys each template sequentially: what-if step N, create step N,
+# then move to step N+1. This ensures management-groups (step 1) are created
+# before later steps try to what-if against those MGs.
+#
+# Without --apply (default), every template is what-if'd with continue-on-error.
+# In greenfield, steps targeting not-yet-created MGs are expected to fail; the
+# summary reports which steps succeeded and which need --apply to proceed.
 #
 # Wave 1 (audit) only. For Wave 2 (enforce), re-scaffold with the params
 # flipped to rolloutPhase=enforce AFTER observing compliance data for
@@ -458,26 +476,38 @@ echo "    active tenant: $TENANT_CURRENT"
 # the file specified.") and masquerades as a phantom success.
 {placeholder_check_sh}
 echo ""
-echo "==> Wave 1 what-if pass ({len(steps)} template(s))"
-SECONDS=0
-{whatif_steps}
 
-echo ""
-echo "==> what-if pass complete (total: ${{SECONDS}}s)"
-if [[ "$APPLY" != "true" ]]; then
+if [[ "$APPLY" == "true" ]]; then
+  # ---- Per-step deploy: what-if then create for each template in order ----
+  # MGs created by step 1 exist before steps 3+ try to what-if against them.
+  echo "==> Wave 1 deploy ({len(steps)} template(s), per-step what-if then create)"
+  SECONDS=0
+  {deploy_pairs}
+
+  echo ""
+  echo "==> Wave 1 complete (total: ${{SECONDS}}s)"
+  echo "    Next steps:"
+  {next_steps_block}
+else
+  # ---- What-if only: continue past failures, report summary ----
+  # In greenfield, steps targeting not-yet-created MGs will fail; the operator
+  # uses the summary to decide whether to proceed with --apply.
+  set +e
+  echo "==> Wave 1 what-if pass ({len(steps)} template(s))"
+  WHATIF_FAILED=0
+  SECONDS=0
+  {safe_whatif_steps}
+
+  echo ""
+  WHATIF_OK=$(( {len(steps)} - WHATIF_FAILED ))
+  echo "==> what-if pass: $WHATIF_OK/{len(steps)} succeeded, $WHATIF_FAILED failed (total: ${{SECONDS}}s)"
+  if [[ $WHATIF_FAILED -gt 0 ]]; then
+    echo "    Steps targeting not-yet-created management groups are expected to fail"
+    echo "    in greenfield. Run with --apply to deploy in dependency order."
+    exit 1
+  fi
   echo "    Re-run with --apply to deploy. Review what-if output above first."
-  exit 0
 fi
-
-echo ""
-echo "==> Wave 1 create pass"
-SECONDS=0
-{create_steps}
-
-echo ""
-echo "==> Wave 1 complete (total: ${{SECONDS}}s)"
-echo "    Next steps:"
-{next_steps_block}
 """
 
 
@@ -524,6 +554,32 @@ def _sh_step_block(step: _Step, verb: str, idx: int, total: int) -> str:
         f"    --template-file {step.bicep} \\\n"
         f"    --parameters @{step.params}"
     )
+
+
+def _sh_step_block_safe(step: _Step, idx: int, total: int) -> str:
+    """Render a what-if step that continues on error, incrementing WHATIF_FAILED."""
+    head = _bash_head(step, "what-if")
+    phase_hint = f" (rolloutPhase={step.phase})" if step.phase else ""
+    scope_hint = f" [{step.scope_name}]" if step.scope_name else ""
+    note = f"\n# {step.mg_note}" if step.mg_note else ""
+    return (
+        f"echo \"--> [{idx}/{total}] {step.template}{scope_hint}{phase_hint} what-if\"{note}\n"
+        f"if {head} \\\n"
+        f"    --template-file {step.bicep} \\\n"
+        f"    --parameters @{step.params}; then\n"
+        f"  echo \"    ok: {step.template}{scope_hint}\"\n"
+        f"else\n"
+        f"  echo \"    FAILED: {step.template}{scope_hint} (exit $?)\" >&2\n"
+        f"  WHATIF_FAILED=$((WHATIF_FAILED+1))\n"
+        f"fi"
+    )
+
+
+def _sh_deploy_pair(step: _Step, idx: int, total: int) -> str:
+    """Render a what-if + create pair for one step (used in --apply mode)."""
+    whatif = _sh_step_block(step, "what-if", idx, total)
+    create = _sh_step_block(step, "create", idx, total)
+    return f"{whatif}\n\n{create}"
 
 
 def _render_ps1(
@@ -581,8 +637,15 @@ def _render_ps1(
         )
     placeholder_check_ps1 = "\n".join(check_lines)
 
-    whatif_steps = "\n\n".join(_ps1_step_block(s, "what-if", i + 1, len(steps)) for i, s in enumerate(steps))
-    create_steps = "\n\n".join(_ps1_step_block(s, "create", i + 1, len(steps)) for i, s in enumerate(steps))
+    # --apply mode: per-step what-if → create
+    deploy_pairs = "\n\n".join(
+        _ps1_deploy_pair(s, i + 1, len(steps)) for i, s in enumerate(steps)
+    )
+
+    # What-if-only mode: continue past failures, report summary
+    safe_whatif_steps = "\n\n".join(
+        _ps1_step_block_safe(s, i + 1, len(steps)) for i, s in enumerate(steps)
+    )
 
     # Emit the "Next steps" footer as independent Write-Host calls. The
     # prior implementation interpolated step 2 inside step 1's double-
@@ -605,9 +668,13 @@ def _render_ps1(
     One-shot Wave-1 (audit) deploy orchestrator for slz-readiness scaffold output.
 
 .DESCRIPTION
-    Iterates the emitted templates in canonical deploy order. Runs
-    `az deployment ... what-if` for every template first; only runs `create`
-    when -Apply is passed and every what-if succeeded.
+    With -Apply: deploys each template sequentially (what-if step N, create
+    step N, then move to N+1). Management groups created by step 1 exist
+    before later steps try to what-if against them.
+
+    Without -Apply (default): runs what-if for every template with
+    continue-on-error. In greenfield, steps targeting not-yet-created MGs are
+    expected to fail; the summary reports which steps need -Apply to proceed.
 
     Wave 1 (audit) only. For Wave 2 (enforce) re-scaffold with
     `rolloutPhase=enforce` AFTER observing compliance data for
@@ -617,16 +684,16 @@ def _render_ps1(
     (when applicable). Run it AFTER Wave 1 create succeeds.
 
 .PARAMETER Apply
-    If set, runs `az deployment ... create` after every what-if succeeds.
-    Default is what-if only (safe).
+    Per-step deploy: what-if then create for each template in canonical
+    order (fail-fast). MGs are created before later steps need them.
 
 .PARAMETER SkipMgPrereq
     Bypass the brownfield alias-map gate. Use only after verifying each
     aliased MG is already parented correctly.
 
 .EXAMPLE
-    ./deploy-all.ps1                 # what-if only (default, safe)
-    ./deploy-all.ps1 -Apply          # deploy Wave 1
+    ./deploy-all.ps1                 # what-if only (continue-on-error)
+    ./deploy-all.ps1 -Apply          # per-step deploy Wave 1
 
 .NOTES
     Emitted by slz-readiness. Review before running.
@@ -669,28 +736,40 @@ Write-Host "    active tenant: $tenantCurrent"
 {placeholder_check_ps1}
 
 Write-Host ""
-Write-Host "==> Wave 1 what-if pass ({len(steps)} template(s))"
-$swWhatif = [System.Diagnostics.Stopwatch]::StartNew()
-{whatif_steps}
-$swWhatif.Stop()
 
-Write-Host ""
-Write-Host ("==> what-if pass complete (total: {{0}}s)" -f [int]$swWhatif.Elapsed.TotalSeconds)
-if (-not $Apply) {{
+if ($Apply) {{
+    # ---- Per-step deploy: what-if then create for each template in order ----
+    # MGs created by step 1 exist before steps 3+ try to what-if against them.
+    Write-Host "==> Wave 1 deploy ({len(steps)} template(s), per-step what-if then create)"
+    $swDeploy = [System.Diagnostics.Stopwatch]::StartNew()
+    {deploy_pairs}
+    $swDeploy.Stop()
+
+    Write-Host ""
+    Write-Host ("==> Wave 1 complete (total: {{0}}s)" -f [int]$swDeploy.Elapsed.TotalSeconds)
+    Write-Host "    Next steps:"
+    {next_steps_block}
+}} else {{
+    # ---- What-if only: continue past failures, report summary ----
+    # In greenfield, steps targeting not-yet-created MGs will fail; the operator
+    # uses the summary to decide whether to proceed with -Apply.
+    $ErrorActionPreference = 'Continue'
+    Write-Host "==> Wave 1 what-if pass ({len(steps)} template(s))"
+    $whatifFailed = 0
+    $swWhatif = [System.Diagnostics.Stopwatch]::StartNew()
+    {safe_whatif_steps}
+    $swWhatif.Stop()
+
+    Write-Host ""
+    $whatifOk = {len(steps)} - $whatifFailed
+    Write-Host ("==> what-if pass: $whatifOk/{len(steps)} succeeded, $whatifFailed failed (total: {{0}}s)" -f [int]$swWhatif.Elapsed.TotalSeconds)
+    if ($whatifFailed -gt 0) {{
+        Write-Host "    Steps targeting not-yet-created management groups are expected to fail"
+        Write-Host "    in greenfield. Run with -Apply to deploy in dependency order."
+        exit 1
+    }}
     Write-Host "    Re-run with -Apply to deploy. Review what-if output above first."
-    exit 0
 }}
-
-Write-Host ""
-Write-Host "==> Wave 1 create pass"
-$swCreate = [System.Diagnostics.Stopwatch]::StartNew()
-{create_steps}
-$swCreate.Stop()
-
-Write-Host ""
-Write-Host ("==> Wave 1 complete (total: {{0}}s)" -f [int]$swCreate.Elapsed.TotalSeconds)
-Write-Host "    Next steps:"
-{next_steps_block}
 """
 
 
@@ -727,6 +806,33 @@ def _ps1_step_block(step: _Step, verb: str, idx: int, total: int) -> str:
         f"    --template-file {step.bicep} `\n"
         f"    --parameters `@{step.params}"
     )
+
+
+def _ps1_step_block_safe(step: _Step, idx: int, total: int) -> str:
+    """Render a what-if step that continues on error, incrementing $whatifFailed."""
+    head = _pwsh_head(step, "what-if")
+    phase_hint = f" (rolloutPhase={step.phase})" if step.phase else ""
+    scope_hint = f" [{step.scope_name}]" if step.scope_name else ""
+    note = f"\n# {step.mg_note}" if step.mg_note else ""
+    return (
+        f"Write-Host \"--> [{idx}/{total}] {step.template}{scope_hint}{phase_hint} what-if\"{note}\n"
+        f"try {{\n"
+        f"    {head} `\n"
+        f"        --template-file {step.bicep} `\n"
+        f"        --parameters `@{step.params}\n"
+        f"    Write-Host \"    ok: {step.template}{scope_hint}\"\n"
+        f"}} catch {{\n"
+        f"    Write-Host \"    FAILED: {step.template}{scope_hint} ($_)\" -ForegroundColor Red\n"
+        f"    $whatifFailed++\n"
+        f"}}"
+    )
+
+
+def _ps1_deploy_pair(step: _Step, idx: int, total: int) -> str:
+    """Render a what-if + create pair for one step (used in -Apply mode)."""
+    whatif = _ps1_step_block(step, "what-if", idx, total)
+    create = _ps1_step_block(step, "create", idx, total)
+    return f"{whatif}\n\n{create}"
 
 
 def _render_dine_sh(emitted: list[dict[str, Any]]) -> str:
