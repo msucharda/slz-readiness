@@ -12,6 +12,13 @@ tools:
 
 # slz-plan skill
 
+> **Canonical invocation.** All `slz_readiness` CLIs are invoked as
+> `python -m slz_readiness.<phase>.cli …`. The `slz-<phase>`
+> console-script shim installed by `pip install -e .` is a convenience
+> alias for interactive use — prefer the `python -m` form in
+> scripted/agent contexts (it does not depend on the venv's `Scripts/`
+> or `bin/` directory being on `PATH`).
+
 ## Goal
 Produce `artifacts/<run>/plan.md` and `plan.json`.
 
@@ -28,9 +35,9 @@ Produce `artifacts/<run>/plan.md` and `plan.json`.
 1. Load `gaps.json`. Group gaps by `design_area`.
 2. **Generate the deterministic snapshot first**:
    ```bash
-   slz-plan-summary --gaps artifacts/<run>/gaps.json
+   python -m slz_readiness.plan.summary_cli --gaps artifacts/<run>/gaps.json
    ```
-   (or `python -m slz_readiness.plan.summary_cli --gaps …`)
+   (interactive shim: `slz-plan-summary --gaps …`)
    This writes `plan.summary.{json,md}` with readiness snapshot, order of
    operations, and discovery blind spots. Cite or relay numbers from this
    file — do not compute totals yourself. The file is outside the scope of

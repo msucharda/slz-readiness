@@ -11,6 +11,13 @@ tools:
 
 # slz-scaffold skill
 
+> **Canonical invocation.** All `slz_readiness` CLIs are invoked as
+> `python -m slz_readiness.<phase>.cli …`. The `slz-<phase>`
+> console-script shim installed by `pip install -e .` is a convenience
+> alias for interactive use — prefer the `python -m` form in
+> scripted/agent contexts (it does not depend on the venv's `Scripts/`
+> or `bin/` directory being on `PATH`).
+
 ## Goal
 Produce `artifacts/<run>/bicep/*.bicep`, `artifacts/<run>/params/*.parameters.json`,
 and `artifacts/<run>/scaffold.manifest.json`.
@@ -90,14 +97,14 @@ and `artifacts/<run>/scaffold.manifest.json`.
      "sovereignty-confidential-policies": { "listOfAllowedLocations": ["<region>", ...] }
    }
    ```
-4. Run (console script, or portable `python -m` form):
+4. Run (canonical form — works without the venv shim on PATH):
    ```bash
-   slz-scaffold --gaps artifacts/<run>/gaps.json \
+   python -m slz_readiness.scaffold.cli --gaps artifacts/<run>/gaps.json \
                 --params artifacts/<run>/scaffold.params.json \
                 --scaffold-profile <full|minimal|include-placeholders> \
                 --out    artifacts/<run>
-   # portable equivalent:
-   python -m slz_readiness.scaffold.cli --gaps artifacts/<run>/gaps.json \
+   # interactive shim equivalent:
+   slz-scaffold --gaps artifacts/<run>/gaps.json \
                 --params artifacts/<run>/scaffold.params.json \
                 --scaffold-profile <full|minimal|include-placeholders> \
                 --out    artifacts/<run>

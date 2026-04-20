@@ -11,6 +11,13 @@ tools:
 
 # slz-discover skill
 
+> **Canonical invocation.** All `slz_readiness` CLIs are invoked as
+> `python -m slz_readiness.<phase>.cli …`. This does not depend on the
+> venv's `Scripts/` (or `bin/`) directory being on `PATH`. The
+> `slz-<phase>` console-script shim installed by `pip install -e .` is
+> a convenience alias for interactive use — if in doubt, always use the
+> `python -m` form.
+
 ## Goal
 Produce `artifacts/<run>/findings.json` for the current tenant.
 
@@ -109,7 +116,9 @@ python -m slz_readiness.discover.cli \
     (--subscription <id> [--subscription <id> ...] | --all-subscriptions)
 ```
 
-`slz-discover` on PATH works identically if the package is `pip install -e .`'d.
+(The `slz-discover` console-script shim — `pip install -e .`'d — is an
+interactive alias for the same CLI; prefer the `python -m` form in
+scripted/agent contexts.)
 
 The CLI **validates** that:
 - `--tenant` matches the active `az account show` tenant (otherwise exits with

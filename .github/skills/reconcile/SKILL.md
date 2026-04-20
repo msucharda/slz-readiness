@@ -12,6 +12,13 @@ tools: [shell, sequential-thinking]
 
 # slz-reconcile skill (v0.6.0 skeleton)
 
+> **Canonical invocation.** All `slz_readiness` CLIs are invoked as
+> `python -m slz_readiness.<phase>.cli …`. The `slz-<phase>`
+> console-script shim installed by `pip install -e .` is a convenience
+> alias for interactive use — prefer the `python -m` form in
+> scripted/agent contexts (it does not depend on the venv's `Scripts/`
+> or `bin/` directory being on `PATH`).
+
 This phase is the **only** LLM-writes-artifact phase in the pipeline.
 Its job is narrow: propose role→MG mappings, let the operator accept or
 reject each one via `ask_user`, then hand the accepted set to the
@@ -46,9 +53,10 @@ actually looks like before choosing.
 Run:
 
 ```bash
-slz-reconcile --mode greenfield \
+python -m slz_readiness.reconcile.cli --mode greenfield \
   --findings artifacts/<run>/findings.json \
   --out artifacts/<run>/mg_alias.json
+# interactive shim: slz-reconcile --mode greenfield …
 ```
 
 Writes `{"<role>": null, …}` for all 14 SLZ roles and exits 0. Skip
@@ -88,10 +96,11 @@ Write the accumulated mapping to
 the final alias map), then:
 
 ```bash
-slz-reconcile --mode brownfield \
+python -m slz_readiness.reconcile.cli --mode brownfield \
   --findings artifacts/<run>/findings.json \
   --proposal artifacts/<run>/mg_alias.proposal.json \
   --out artifacts/<run>/mg_alias.json
+# interactive shim: slz-reconcile --mode brownfield …
 ```
 
 If the CLI exits non-zero (schema violation), surface the error to

@@ -134,15 +134,18 @@ Wait for `acknowledged == true` before proceeding.
 
 ```bash
 mkdir -p artifacts/<UTC-timestamp>
-slz-discover --out artifacts/<run>/findings.json \
+python -m slz_readiness.discover.cli --out artifacts/<run>/findings.json \
   --tenant <tenant-id> \
   (--all-subscriptions | --subscription <id> [--subscription <id> ...])
 ```
 
-(Portable form: `python -m slz_readiness.discover.cli …` with the same
-flags.) The CLI refuses to run without `--tenant` and exactly one of
-`--subscription` / `--all-subscriptions` — this is a guard-rail, not a
-suggestion.
+(Interactive shim: `slz-discover …` with the same flags — only works
+if `pip install -e .`'s `Scripts/` or `bin/` directory is on `PATH`.
+Prefer the `python -m` form above in agent / scripted contexts; it
+works whenever the package is importable, which is the real
+precondition for the plugin.) The CLI refuses to run without
+`--tenant` and exactly one of `--subscription` / `--all-subscriptions`
+— this is a guard-rail, not a suggestion.
 
 ## 7. Relay the Discover summary to the operator
 

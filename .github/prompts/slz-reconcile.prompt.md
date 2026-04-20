@@ -28,9 +28,10 @@ Call `ask_user`:
 If `mode == "greenfield"`:
 
 ```bash
-slz-reconcile --mode greenfield \
+python -m slz_readiness.reconcile.cli --mode greenfield \
   --findings artifacts/<run>/findings.json \
   --out artifacts/<run>/mg_alias.json
+# interactive shim: slz-reconcile --mode greenfield …
 ```
 
 Proceed to step 3.
@@ -55,9 +56,10 @@ Before the per-role loop, call `ask_user`:
 If `use_heuristic == true`, run:
 
 ```bash
-slz-reconcile --mode brownfield --heuristic \
+python -m slz_readiness.reconcile.cli --mode brownfield --heuristic \
   --findings artifacts/<run>/findings.json \
   --out artifacts/<run>/mg_alias.json
+# interactive shim: slz-reconcile --mode brownfield --heuristic …
 ```
 
 If the CLI accepts, render the resulting alias map to the operator
@@ -94,10 +96,11 @@ After the loop, write the accumulated dict to
 `null` for skipped / rejected roles), then run:
 
 ```bash
-slz-reconcile --mode brownfield \
+python -m slz_readiness.reconcile.cli --mode brownfield \
   --findings artifacts/<run>/findings.json \
   --proposal artifacts/<run>/mg_alias.proposal.json \
   --out artifacts/<run>/mg_alias.json
+# interactive shim: slz-reconcile --mode brownfield …
 ```
 
 If the CLI exits non-zero (schema violation):
