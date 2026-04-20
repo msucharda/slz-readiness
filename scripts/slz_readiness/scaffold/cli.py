@@ -23,6 +23,7 @@ from .template_registry import INFORMATIONAL_RULES, RULE_TO_TEMPLATE, TEMPLATE_S
 _DEPLOY_ORDER: list[str] = [
     "management-groups",
     "log-analytics",
+    "alz-policy-definitions",
     "sovereignty-global-policies",
     "archetype-policies",
     "sovereignty-confidential-policies",
@@ -134,7 +135,8 @@ def _deploy_commands(
     )
     slz_alias = alias_map.get("slz")
     needs_slz_root = any(
-        e.get("template") == "sovereignty-global-policies" for e in emitted
+        e.get("template") in {"sovereignty-global-policies", "alz-policy-definitions"}
+        for e in emitted
     )
     bash_lines: list[str] = ['MG_ID="<your-mg-id>"', 'LOCATION="<your-region>"']
     pwsh_lines: list[str] = ['$mgId = "<your-mg-id>"', '$location = "<your-region>"']
@@ -174,6 +176,15 @@ def _deploy_commands(
                     "defaults to a placeholder. Populate it with your "
                     "sovereign-root MG id (NOT the tenant root)."
                 )
+        elif template == "alz-policy-definitions":
+            mg_bash_var = "$SLZ_ROOT_MG_ID"
+            mg_pwsh_var = "$slzRootMgId"
+            mg_note = (
+                "# Custom ALZ policyDefinitions + policySetDefinitions — "
+                "deploy at the SLZ intermediate-root MG. "
+                "MUST precede any archetype / sovereignty policy-assignment "
+                "deployment."
+            )
         elif template == "sovereignty-confidential-policies" and scope_name in alias_map:
             # The alias value is the customer's actual MG name for this
             # confidential archetype; inline it so the operator doesn't
@@ -280,7 +291,8 @@ def _write_how_to_deploy(
         for e in emitted
     )
     needs_slz_root = any(
-        e.get("template") == "sovereignty-global-policies" for e in emitted
+        e.get("template") in {"sovereignty-global-policies", "alz-policy-definitions"}
+        for e in emitted
     )
     slz_alias = alias_map.get("slz")
     slz_root_default = slz_alias or "<your-slz-root-mg-id>"
@@ -476,6 +488,19 @@ def _write_how_to_deploy(
             "before any policy that references the workspace id."
         )
         _idx += 1
+    if "alz-policy-definitions" in emitted_stems:
+        _order_bullets.append(
+            f"{_idx}. **`alz-policy-definitions`** (MG scope — SLZ "
+            f"intermediate-root) — deploys the ~191 custom policy + "
+            "policySet definitions every archetype / sovereignty "
+            "assignment references via "
+            "`/managementGroups/<slz-root>/providers/Microsoft.Authorization/"
+            "policy(Set)Definitions/<name>`. MUST deploy before any "
+            "policy-assignment template, otherwise `az deployment mg create` "
+            "fails with `InvalidCreatePolicyAssignmentRequest: ... is out of "
+            "scope` for every assignment that points at a custom initiative."
+        )
+        _idx += 1
     if emitted_stems & {"archetype-policies", "sovereignty-global-policies",
                         "sovereignty-confidential-policies"}:
         _prereq = []
@@ -483,6 +508,8 @@ def _write_how_to_deploy(
             _prereq.append("management-groups")
         if "log-analytics" in emitted_stems:
             _prereq.append("log-analytics")
+        if "alz-policy-definitions" in emitted_stems:
+            _prereq.append("alz-policy-definitions")
         _prereq_clause = (
             f" Deploy *after* {' and '.join(_prereq)}, otherwise the "
             "`policyDefinitionId` / `workspaceResourceId` references will "
@@ -963,12 +990,29 @@ def _write_run_rollup(out_dir: Path) -> None:
         "you intend to hand-edit the emitted *.parameters.json before deploy."
     ),
 )
+@click.option(
+    "--scaffold-profile",
+    type=click.Choice(["full", "minimal", "include-placeholders"]),
+    default="full",
+    help=(
+        "v0.13.0 emit profile: "
+        "'full' (default) — emit all applicable templates + auto-emit the "
+        "alz-policy-definitions template so archetype/sovereignty assignments "
+        "resolve their custom policyDefinitionId references; "
+        "'minimal' — emit only management-groups + sovereignty-* templates "
+        "(skip archetype overlay AND the custom-def infra) for operators who "
+        "want sovereignty-only compliance; "
+        "'include-placeholders' — alias for 'full' with --include-placeholders "
+        "forced on."
+    ),
+)
 def main(
     gaps_path: Path,
     params_path: Path | None,
     out_dir: Path,
     rewrite_names: bool | None,
     include_placeholders: bool,
+    scaffold_profile: str,
 ) -> None:
     gaps_doc = json.loads(gaps_path.read_text(encoding="utf-8"))
     gaps = gaps_doc.get("gaps", gaps_doc) if isinstance(gaps_doc, dict) else gaps_doc
@@ -1027,6 +1071,7 @@ def main(
             gap_count=len(gaps),
             rewrite_names=rewrite_names,
             include_placeholders=include_placeholders,
+            scaffold_profile=scaffold_profile,
             prefilled_templates=sorted(prefilled.keys()),
             operator_params_supplied=params_path is not None,
             needs_operator_input_count=len(needs_input),
@@ -1054,6 +1099,7 @@ def main(
                 run_dir=run_dir,
                 rewrite_names=rewrite_names,
                 include_placeholders=include_placeholders,
+                scaffold_profile=scaffold_profile,
             )
         except ScaffoldError as exc:
             click.echo(f"SCAFFOLD ERROR: {exc}", err=True)

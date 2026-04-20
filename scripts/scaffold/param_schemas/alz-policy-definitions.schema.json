@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "alz-policy-definitions.params",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["policyDefinitions", "policySetDefinitions"],
+  "properties": {
+    "policyDefinitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "properties"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "properties": { "type": "object" }
+        }
+      }
+    },
+    "policySetDefinitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "properties"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "properties": { "type": "object" }
+        }
+      }
+    }
+  }
+}

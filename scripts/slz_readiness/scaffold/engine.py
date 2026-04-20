@@ -137,6 +137,127 @@ def _contains_placeholder(value: Any) -> bool:
         return any(_contains_placeholder(v) for v in value)
     return False
 
+
+# v0.13.0 — baseline custom-def scope rewrite.
+#
+# ALZ policy assignments reference their custom policy (set) definitions
+# via a literal ``/providers/Microsoft.Management/managementGroups/placeholder/
+# providers/Microsoft.Authorization/policy(Set)Definitions/<name>``
+# token. Emitting this verbatim causes
+# ``InvalidCreatePolicyAssignmentRequest: ... is out of scope`` at deploy
+# time, because the ``placeholder`` MG doesn't exist on the tenant and
+# the referenced defs are not deployed under it.
+#
+# This rewrite replaces ``/managementGroups/placeholder/`` with
+# ``/managementGroups/<slz_root_mg_id>/`` in every string it encounters
+# (assignment ``policyDefinitionId``, policy-set inner
+# ``policyDefinitionId`` entries, metadata refs). The ``slz_root_mg_id``
+# is the SLZ intermediate-root MG id — resolved from ``mg_alias.json``'s
+# ``slz`` key, defaulting to the canonical ``alz``.
+#
+# Anchored to the ``/managementGroups/<token>/`` prefix on purpose —
+# parameter *values* that legitimately carry ``/placeholder/`` or
+# ``/contoso/`` tokens (all-zero subscription GUIDs in DDoS plan IDs,
+# Private DNS zone IDs, sample DNS resource names) remain untouched and
+# are still caught by ``_contains_placeholder``.
+#
+# Two tokens observed in the vendored ALZ Library:
+#   * ``placeholder`` — used by archetype policy **assignments** and
+#     the ALZ Library default_values in ``archetype_extensions``.
+#   * ``contoso``     — used by custom policy **set** definitions to
+#     reference their component policy definitions (e.g.
+#     ``Enforce-EncryptTransit_20241211``).
+# Both must be rewritten to the SLZ intermediate-root MG, otherwise
+# ARM rejects the deployment with
+# ``InvalidCreatePolicySetDefinitionRequest`` or
+# ``InvalidCreatePolicyAssignmentRequest: ... is out of scope``.
+# See slz-demo run 20260420T100848Z (deployment
+# slz-ap-platform-20260420152251, 29 failures).
+_PLACEHOLDER_MG_SCOPE_RE = re.compile(
+    r"/providers/Microsoft\.Management/managementGroups/"
+    r"(?:placeholder|contoso)/",
+    re.IGNORECASE,
+)
+
+
+def _rewrite_placeholder_mg_scope(value: Any, slz_root_mg_id: str) -> Any:
+    """Rewrite ``/managementGroups/placeholder/`` to the SLZ root MG scope.
+
+    Recursively walks dicts/lists; returns a *new* value tree without
+    mutating inputs. Non-string leaves pass through unchanged. Strings
+    without the token are returned unchanged.
+    """
+    if isinstance(value, str):
+        replacement = (
+            f"/providers/Microsoft.Management/managementGroups/{slz_root_mg_id}/"
+        )
+        return _PLACEHOLDER_MG_SCOPE_RE.sub(replacement, value)
+    if isinstance(value, dict):
+        return {k: _rewrite_placeholder_mg_scope(v, slz_root_mg_id) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_rewrite_placeholder_mg_scope(v, slz_root_mg_id) for v in value]
+    return value
+
+
+def _load_custom_definitions(
+    slz_root_mg_id: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Enumerate vendored ALZ custom policy + policySet definitions.
+
+    Returns ``(policy_definitions, policy_set_definitions)`` — each entry
+    is ``{"name": ..., "properties": ...}`` suitable for the
+    ``alz-policy-definitions`` template's two array params. ARM wrapper
+    fields (``id``, ``type``, ``etag``, ``systemData``) are stripped.
+
+    The ``/managementGroups/placeholder/`` scope token inside each
+    definition's ``properties`` is rewritten to
+    ``/managementGroups/<slz_root_mg_id>/`` via
+    :func:`_rewrite_placeholder_mg_scope`, so a policySetDefinition's
+    inner ``policyDefinitions[].policyDefinitionId`` references the
+    matching custom def at the correct deploying MG.
+
+    Emits an empty tuple when the baseline directories are absent —
+    scaffold callers guard on this.
+    """
+    defs: list[dict[str, Any]] = []
+    sets: list[dict[str, Any]] = []
+    for subtree in ("platform/alz", "platform/slz"):
+        defs_dir = BASELINE_DIR / subtree / "policy_definitions"
+        sets_dir = BASELINE_DIR / subtree / "policy_set_definitions"
+        if defs_dir.exists():
+            for path in sorted(defs_dir.glob("*.json")):
+                try:
+                    doc = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                name = doc.get("name")
+                props = doc.get("properties")
+                if not name or not isinstance(props, dict):
+                    continue
+                defs.append(
+                    {
+                        "name": name,
+                        "properties": _rewrite_placeholder_mg_scope(props, slz_root_mg_id),
+                    }
+                )
+        if sets_dir.exists():
+            for path in sorted(sets_dir.glob("*.json")):
+                try:
+                    doc = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                name = doc.get("name")
+                props = doc.get("properties")
+                if not name or not isinstance(props, dict):
+                    continue
+                sets.append(
+                    {
+                        "name": name,
+                        "properties": _rewrite_placeholder_mg_scope(props, slz_root_mg_id),
+                    }
+                )
+    return defs, sets
+
 # Parameter-name predicate for the audit rewrite. Key name must contain
 # "effect" (case-insensitive) — whitelist-based to avoid rewriting an
 # unrelated parameter that happens to carry the string "Deny" as a value.
@@ -285,6 +406,7 @@ def _resolve_archetype_assignments(
     *,
     rollout_phase: str,
     include_placeholders: bool = False,
+    slz_root_mg_id: str = "alz",
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Read the archetype JSON + per-assignment JSONs to build the ``assignments`` array.
 
@@ -298,10 +420,18 @@ def _resolve_archetype_assignments(
 
     ``include_placeholders`` (default False): assignments whose baseline
     parameters still contain ALZ placeholders (all-zero subscription GUIDs,
-    literal ``/placeholder/`` segments) are **skipped by default** — emitting
-    them makes ``az deployment … create`` what-if fail with opaque validation
-    errors. Set True to emit verbatim (legacy behaviour); a LOUD warning is
-    always added.
+    literal ``/placeholder/`` segments — NOT the MG-scope token, which is
+    rewritten unconditionally by ``slz_root_mg_id``) are **skipped by
+    default** — emitting them makes ``az deployment … create`` what-if
+    fail with opaque validation errors. Set True to emit verbatim (legacy
+    behaviour); a LOUD warning is always added.
+
+    ``slz_root_mg_id`` (v0.13.0): replaces the literal
+    ``/managementGroups/placeholder/`` scope token in every baseline
+    assignment JSON so ``policyDefinitionId`` references resolve to the
+    actual deploying MG. Defaults to the canonical ``alz``. Parameter
+    placeholders (subscription GUIDs, DNS zone IDs) are NOT rewritten —
+    those still require operator input.
     """
     warnings: list[str] = []
     baseline_ref = gap.get("baseline_ref") or {}
@@ -349,6 +479,12 @@ def _resolve_archetype_assignments(
             )
             continue
         pa = json.loads(pa_file.read_text(encoding="utf-8"))
+        # v0.13.0 — rewrite the /managementGroups/placeholder/ scope token
+        # in the WHOLE baseline JSON (policyDefinitionId + any nested refs)
+        # BEFORE the placeholder-parameter check. After this, _PLACEHOLDER_RE
+        # only catches genuine operator placeholders (subscription GUIDs,
+        # Private DNS zone resource IDs in parameter values).
+        pa = _rewrite_placeholder_mg_scope(pa, slz_root_mg_id)
         props = pa.get("properties", {})
         base_params = props.get("parameters", {}) or {}
         # ALZ baseline ships placeholder values (all-zero subscription GUIDs,
@@ -594,6 +730,7 @@ def scaffold_for_gaps(
     run_dir: Path | None = None,
     rewrite_names: bool | None = None,
     include_placeholders: bool = False,
+    scaffold_profile: str = "full",
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Write bicep + params files for `gaps`. Returns (emitted, warnings).
 
@@ -619,16 +756,48 @@ def scaffold_for_gaps(
       canonical names, fails to match the aliased MGs on the tenant,
       and produces a disconnected parallel tree at the tenant root
       (root cause of blocker #2 in run 20260419T132307Z).
+
+    ``scaffold_profile`` (v0.13.0) — one of:
+
+    * ``"full"`` (default): emit all applicable templates. When any
+      archetype or sovereignty template emits, also emit the
+      ``alz-policy-definitions`` template (the custom policy +
+      policySet definitions their assignments reference). Without this,
+      ``az deployment … create`` fails with
+      ``InvalidCreatePolicyAssignmentRequest: ... is out of scope`` on
+      ~29 archetype assignments. See slz-demo run 20260420T100848Z.
+    * ``"minimal"``: emit only ``management-groups`` and sovereignty
+      templates — skip archetype policies AND the custom-definitions
+      template. Use for operators who want sovereignty-only compliance
+      without the full ALZ archetype overlay.
+    * ``"include-placeholders"``: alias for ``"full"`` with
+      ``include_placeholders=True`` forced on — operator commits to
+      hand-editing the emitted params file before deploy.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "bicep").mkdir(exist_ok=True)
     (out_dir / "params").mkdir(exist_ok=True)
+
+    if scaffold_profile not in {"full", "minimal", "include-placeholders"}:
+        raise ScaffoldError(
+            f"Unknown scaffold_profile '{scaffold_profile}'. "
+            "Expected one of: full, minimal, include-placeholders."
+        )
+    # include-placeholders is "full" with the placeholder-emit flag forced on.
+    if scaffold_profile == "include-placeholders":
+        include_placeholders = True
 
     # v0.7.0: brownfield retargeting hint. The actual scope-rewrite happens
     # at Evaluate-time (selector aliasing) and at deploy-time (operator picks
     # MG_ID per ``how-to-deploy.md``). This loader exists so Scaffold can
     # surface the alias mapping in warnings + how-to-deploy.md.
     alias_map = _load_alias_map(run_dir if run_dir is not None else out_dir)
+
+    # v0.13.0 — SLZ intermediate-root MG id drives the custom-def scope
+    # rewrite and the alz-policy-definitions template's target MG. Prefer
+    # the operator's tenant name from mg_alias.json (``slz`` role); fall
+    # back to the canonical ``alz`` used across the baseline library.
+    slz_root_mg_id = alias_map.get("slz") or "alz"
 
     # Auto-flip when rewrite_names was not explicitly set: enable when
     # alias entries are present AND the params for management-groups
@@ -684,6 +853,10 @@ def scaffold_for_gaps(
         tmpl = RULE_TO_TEMPLATE.get(rule_id or "")
         if tmpl is None:
             continue
+        # v0.13.0 — minimal profile skips the archetype overlay entirely.
+        # Sovereignty + MG-hierarchy + logging still emit.
+        if scaffold_profile == "minimal" and tmpl == "archetype-policies":
+            continue
         scope = _scope_hint_for_gap(gap) if tmpl in _PER_SCOPE_TEMPLATES else ""
         key = (tmpl, scope)
         bucket = buckets.setdefault(key, {"rule_ids": [], "gap": gap})
@@ -702,6 +875,7 @@ def scaffold_for_gaps(
                 bucket["gap"],
                 rollout_phase=rollout_phase or "audit",
                 include_placeholders=include_placeholders,
+                slz_root_mg_id=slz_root_mg_id,
             )
             warnings.extend(
                 f"[{tmpl}:{scope or 'tenant'}] {msg}" if not msg.startswith("[") else msg
@@ -822,5 +996,75 @@ def scaffold_for_gaps(
                 error=str(exc),
             )
             continue
+
+    # v0.13.0 — auto-emit the ALZ custom policy + policySet definitions
+    # when any archetype or sovereignty template just emitted. Without
+    # this, the emitted assignments reference custom initiatives that
+    # don't exist at the deploying MG, and
+    # ``az deployment mg create`` fails with
+    # ``InvalidCreatePolicyAssignmentRequest: ... is out of scope``.
+    #
+    # Skipped under ``scaffold_profile="minimal"``: that profile
+    # intentionally omits the archetype overlay, so the custom defs
+    # aren't needed either.
+    emitted_stems = {e.get("template") for e in emitted}
+    needs_custom_defs = scaffold_profile != "minimal" and bool(
+        emitted_stems
+        & {
+            "archetype-policies",
+            "sovereignty-global-policies",
+            "sovereignty-confidential-policies",
+        }
+    )
+    if needs_custom_defs:
+        defs, sets = _load_custom_definitions(slz_root_mg_id)
+        if defs or sets:
+            try:
+                emitted.append(
+                    _emit(
+                        out_dir,
+                        "alz-policy-definitions",
+                        "",
+                        {
+                            "policyDefinitions": defs,
+                            "policySetDefinitions": sets,
+                        },
+                        [],
+                    )
+                )
+                warnings.append(
+                    "[alz-policy-definitions] Auto-emitted custom policy "
+                    f"definitions ({len(defs)}) and policySet definitions "
+                    f"({len(sets)}). Deploy this template to the SLZ "
+                    f"intermediate-root MG ('{slz_root_mg_id}') BEFORE any "
+                    "archetype/sovereignty policy assignments — see "
+                    "how-to-deploy.md Wave 0.5."
+                )
+                _trace.log(
+                    "scaffold.custom_definitions",
+                    policy_definition_count=len(defs),
+                    policy_set_definition_count=len(sets),
+                    slz_root_mg_id=slz_root_mg_id,
+                )
+            except ScaffoldError as exc:
+                warnings.append(
+                    f"[alz-policy-definitions] SKIPPED — {exc}. "
+                    "Archetype/sovereignty policy assignments referencing "
+                    "custom ALZ initiatives will fail at deploy time with "
+                    "InvalidCreatePolicyAssignmentRequest."
+                )
+                _trace.log(
+                    "scaffold.emit_skipped",
+                    template="alz-policy-definitions",
+                    scope="",
+                    error=str(exc),
+                )
+        else:
+            warnings.append(
+                "[alz-policy-definitions] No vendored custom policy "
+                "definitions found under data/baseline/alz-library/platform/"
+                "{alz,slz}/policy_definitions|policy_set_definitions. "
+                "Skipping auto-emit. Re-vendor the baseline."
+            )
 
     return emitted, warnings

@@ -6,6 +6,8 @@ from pathlib import Path
 
 from slz_readiness.scaffold.engine import (
     _downshift_deny_to_audit,
+    _load_custom_definitions,
+    _rewrite_placeholder_mg_scope,
     scaffold_for_gaps,
 )
 
@@ -48,7 +50,13 @@ def test_scaffold_emits_templates_for_gaps(tmp_path: Path) -> None:
     }
     emitted, warnings = scaffold_for_gaps(gaps, params, tmp_path)
     stems = sorted(e["template"] for e in emitted)
-    assert stems == ["management-groups", "sovereignty-confidential-policies"]
+    # alz-policy-definitions is auto-emitted whenever archetype/sovereignty
+    # templates are — its custom defs are the prereq.
+    assert stems == [
+        "alz-policy-definitions",
+        "management-groups",
+        "sovereignty-confidential-policies",
+    ]
     # Per-scope templates get a scope suffix in their filename.
     conf = next(e for e in emitted if e["template"] == "sovereignty-confidential-policies")
     assert conf["scope"] == "confidential_corp"
@@ -119,8 +127,13 @@ def test_scaffold_dedup_is_per_scope(tmp_path: Path) -> None:
         },
     ]
     emitted, _ = scaffold_for_gaps(gaps, {}, tmp_path)
-    scopes = sorted(e["scope"] for e in emitted)
+    # Archetype-policies fan out per scope; alz-policy-definitions is
+    # auto-emitted once as the custom-def prereq (scope="").
+    scopes = sorted(
+        e["scope"] for e in emitted if e["template"] == "archetype-policies"
+    )
     assert scopes == ["corp", "sandbox"]
+    assert any(e["template"] == "alz-policy-definitions" for e in emitted)
 
 
 # ---------------------------------------------------------------------------
@@ -165,8 +178,11 @@ def test_phase_audit_is_default_and_rewrites_archetype_deny(tmp_path: Path) -> N
         )
     ]
     emitted, warnings = scaffold_for_gaps(gaps, {}, tmp_path)
-    assert len(emitted) == 1
-    e = emitted[0]
+    # alz-policy-definitions is auto-emitted as the custom-def prereq.
+    archetype = [e for e in emitted if e["template"] == "archetype-policies"]
+    assert len(archetype) == 1
+    assert any(e["template"] == "alz-policy-definitions" for e in emitted)
+    e = archetype[0]
     assert e["rollout_phase"] == "audit"
     params_doc = json.loads((tmp_path / e["params"]).read_text(encoding="utf-8"))
     assert params_doc["parameters"]["rolloutPhase"]["value"] == "audit"
@@ -225,9 +241,8 @@ def test_sovereign_global_phase_threaded_through_params(tmp_path: Path) -> None:
         },
         tmp_path,
     )
-    assert len(emitted) == 1
-    e = emitted[0]
-    assert e["template"] == "sovereignty-global-policies"
+    assert len(emitted) == 2  # sovereignty-global-policies + alz-policy-definitions
+    e = next(e for e in emitted if e["template"] == "sovereignty-global-policies")
     assert e["rollout_phase"] == "enforce"
     params_doc = json.loads((tmp_path / e["params"]).read_text(encoding="utf-8"))
     assert params_doc["parameters"]["rolloutPhase"]["value"] == "enforce"
@@ -1075,3 +1090,144 @@ def test_rewrite_names_explicit_false_overrides_auto(tmp_path: Path) -> None:
         gaps, params, tmp_path, run_dir=tmp_path, rewrite_names=False
     )
     assert not any("auto-enabled" in w for w in warnings), warnings
+
+
+# ---------------------------------------------------------------------------
+# v0.13.0 — custom ALZ policy-definition emission + placeholder-MG rewrite
+# ---------------------------------------------------------------------------
+
+
+def test_rewrite_placeholder_mg_scope_rewrites_strings() -> None:
+    """Prefix-anchored rewrite of /managementGroups/{placeholder,contoso}/."""
+    s = (
+        "/providers/Microsoft.Management/managementGroups/placeholder/"
+        "providers/Microsoft.Authorization/policySetDefinitions/Enforce-X"
+    )
+    out = _rewrite_placeholder_mg_scope(s, "alz")
+    assert "managementGroups/alz/providers/Microsoft.Authorization" in out
+    assert "/placeholder/" not in out
+    # policy_set_definitions in baseline use `contoso` instead.
+    s2 = (
+        "/providers/Microsoft.Management/managementGroups/contoso/"
+        "providers/Microsoft.Authorization/policyDefinitions/Append-X"
+    )
+    out2 = _rewrite_placeholder_mg_scope(s2, "alz")
+    assert "managementGroups/alz/providers/Microsoft.Authorization" in out2
+    assert "/contoso/" not in out2
+
+
+def test_rewrite_placeholder_mg_scope_walks_nested_structures() -> None:
+    obj = {
+        "properties": {
+            "policyDefinitionId": (
+                "/providers/Microsoft.Management/managementGroups/placeholder/"
+                "providers/Microsoft.Authorization/policySetDefinitions/Foo"
+            ),
+            "parameters": {
+                "someList": {"value": [
+                    "/providers/Microsoft.Management/managementGroups/placeholder/x",
+                    "unrelated",
+                ]},
+            },
+        },
+    }
+    out = _rewrite_placeholder_mg_scope(obj, "alz")
+    pdid = out["properties"]["policyDefinitionId"]
+    assert "managementGroups/alz/" in pdid and "placeholder" not in pdid
+    lst = out["properties"]["parameters"]["someList"]["value"]
+    assert lst[0].startswith(
+        "/providers/Microsoft.Management/managementGroups/alz/"
+    )
+    assert lst[1] == "unrelated"
+
+
+def test_rewrite_placeholder_mg_scope_leaves_param_placeholders_alone() -> None:
+    """/placeholder/ tokens NOT anchored to /managementGroups/ — e.g. in
+    parameter default-values for DDoS plan IDs or DNS zones — must be
+    left as-is for the operator to hand-edit."""
+    s = "/subscriptions/00000000-0000-0000-0000-000000000000/placeholder/dnsZone"
+    out = _rewrite_placeholder_mg_scope(s, "alz")
+    assert out == s
+
+
+def test_rewrite_placeholder_mg_scope_noop_on_non_strings() -> None:
+    assert _rewrite_placeholder_mg_scope(42, "alz") == 42
+    assert _rewrite_placeholder_mg_scope(None, "alz") is None
+    assert _rewrite_placeholder_mg_scope(True, "alz") is True
+
+
+def test_load_custom_definitions_returns_nonempty_with_rewritten_scope() -> None:
+    """The vendored ALZ baseline has ~149 policyDefinitions + ~42
+    policySetDefinitions. All must load with name+properties and no
+    residual /managementGroups/placeholder/ tokens."""
+    defs, sets = _load_custom_definitions("alz")
+    assert len(defs) > 100, f"expected >100 policy definitions, got {len(defs)}"
+    assert len(sets) > 20, f"expected >20 policySet definitions, got {len(sets)}"
+    for entry in defs + sets:
+        assert "name" in entry and "properties" in entry
+        # ARM wrapper fields must be stripped.
+        assert "type" not in entry
+        assert "id" not in entry
+    # No residual /managementGroups/{placeholder,contoso}/ tokens.
+    blob = json.dumps({"defs": defs, "sets": sets})
+    assert "/managementGroups/placeholder/" not in blob
+    assert "/managementGroups/contoso/" not in blob
+
+
+def test_scaffold_minimal_profile_skips_archetype_and_custom_defs(
+    tmp_path: Path,
+) -> None:
+    """scaffold_profile=minimal must NOT emit archetype-policies and must
+    NOT auto-emit alz-policy-definitions (its only trigger is
+    archetype/sovereignty emission, which minimal suppresses for
+    archetype-policies)."""
+    gaps = [
+        _archetype_gap(
+            "archetype.alz_corp_policies_applied",
+            "scope:mg/corp",
+            "platform/alz/archetype_definitions/corp.alz_archetype_definition.json",
+        ),
+        _gap("mg.slz.hierarchy_shape"),
+    ]
+    params = {"management-groups": {"parentManagementGroupId": "t"}}
+    emitted, _ = scaffold_for_gaps(
+        gaps, params, tmp_path, scaffold_profile="minimal"
+    )
+    stems = {e["template"] for e in emitted}
+    assert "archetype-policies" not in stems
+    assert "alz-policy-definitions" not in stems
+    assert "management-groups" in stems
+
+
+def test_scaffold_full_profile_auto_emits_custom_defs(tmp_path: Path) -> None:
+    """Default profile (full) auto-emits alz-policy-definitions whenever
+    archetype-policies is emitted."""
+    gaps = [
+        _archetype_gap(
+            "archetype.alz_corp_policies_applied",
+            "scope:mg/corp",
+            "platform/alz/archetype_definitions/corp.alz_archetype_definition.json",
+        )
+    ]
+    emitted, _ = scaffold_for_gaps(gaps, {}, tmp_path)
+    stems = {e["template"] for e in emitted}
+    assert "archetype-policies" in stems
+    assert "alz-policy-definitions" in stems
+    # Params file must contain both arrays.
+    cd_entry = next(e for e in emitted if e["template"] == "alz-policy-definitions")
+    doc = json.loads((tmp_path / cd_entry["params"]).read_text(encoding="utf-8"))
+    assert len(doc["parameters"]["policyDefinitions"]["value"]) > 100
+    assert len(doc["parameters"]["policySetDefinitions"]["value"]) > 20
+
+
+def test_scaffold_rejects_invalid_profile(tmp_path: Path) -> None:
+    import pytest
+    from slz_readiness.scaffold.engine import ScaffoldError
+
+    with pytest.raises(ScaffoldError, match="scaffold_profile"):
+        scaffold_for_gaps(
+            [_gap("mg.slz.hierarchy_shape")], {}, tmp_path, scaffold_profile="bogus"
+        )
+
+
+

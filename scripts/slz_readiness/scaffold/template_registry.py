@@ -63,6 +63,7 @@ ALLOWED_TEMPLATES = {
     "sovereignty-global-policies",
     "sovereignty-confidential-policies",
     "archetype-policies",
+    "alz-policy-definitions",
     "log-analytics",
     "role-assignment",
 }
@@ -79,6 +80,7 @@ TEMPLATE_SCOPES: dict[str, str] = {
     "sovereignty-global-policies": "managementGroup",
     "sovereignty-confidential-policies": "managementGroup",
     "archetype-policies": "managementGroup",
+    "alz-policy-definitions": "managementGroup",
     "role-assignment": "managementGroup",
     # Subscription-scope: the template creates its own resource group
     # (`Microsoft.Resources/resourceGroups`) so operators don't have to
