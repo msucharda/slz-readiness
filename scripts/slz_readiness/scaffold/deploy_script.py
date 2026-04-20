@@ -241,14 +241,31 @@ def _render_sh(
     tenant_default = "<tenant-id>"
     brownfield_block = _sh_brownfield_block(alias_map) if alias_map else ""
     var_lines = ['MG_ID="<your-mg-id>"', 'LOCATION="<your-region>"']
+    placeholder_vars = ["MG_ID", "LOCATION"]
     if needs_slz_root:
         slz_default = alias_map.get("slz", "<your-slz-root-mg-id>")
         var_lines.append(f'SLZ_ROOT_MG_ID="{slz_default}"')
+        if slz_default.startswith("<") and slz_default.endswith(">"):
+            placeholder_vars.append("SLZ_ROOT_MG_ID")
     if needs_tenant_root:
         var_lines.append('TENANT_ROOT_MG_ID="<your-tenant-root-mg-id>"')
+        placeholder_vars.append("TENANT_ROOT_MG_ID")
     if needs_rg:
         var_lines.append('RG_NAME="<your-resource-group>"')
+        placeholder_vars.append("RG_NAME")
     vars_block = "\n".join(var_lines)
+
+    # Fail-fast if any angle-bracket placeholder survived. On Windows,
+    # az is a .cmd wrapper and cmd.exe treats ``<`` in the argument
+    # ``<your-region>`` as input redirection — yielding "The system
+    # cannot find the file specified." and a silent *apparent* success.
+    check_lines = [
+        f'if [[ "${{{v}}}" == "<"*">" ]]; then '
+        f'echo "ERROR: {v} still holds the placeholder \\"${{{v}}}\\". '
+        f'Edit the Variables block at the top of this script." >&2; exit 2; fi'
+        for v in placeholder_vars
+    ]
+    placeholder_check_sh = "\n".join(check_lines)
 
     whatif_steps = "\n\n".join(_sh_step_block(s, "what-if", i + 1, len(steps)) for i, s in enumerate(steps))
     create_steps = "\n\n".join(_sh_step_block(s, "create", i + 1, len(steps)) for i, s in enumerate(steps))
@@ -326,6 +343,11 @@ echo "    active tenant: $TENANT_CURRENT"
 # ---- Variables (fill in before running) ----
 {vars_block}
 
+# Guard: the angle-bracket placeholders above must be replaced before running.
+# Passing a literal ``<foo>`` to ``az`` via ``cmd.exe`` / batch wrappers causes
+# the shell to interpret ``<`` as input redirection ("The system cannot find
+# the file specified.") and masquerades as a phantom success.
+{placeholder_check_sh}
 echo ""
 echo "==> Wave 1 what-if pass ({len(steps)} template(s))"
 SECONDS=0
@@ -413,14 +435,35 @@ def _render_ps1(
     tenant_default = "<tenant-id>"
     brownfield_block = _ps1_brownfield_block(alias_map) if alias_map else ""
     var_lines = ['$mgId = "<your-mg-id>"', '$location = "<your-region>"']
+    placeholder_vars = ["mgId", "location"]
     if needs_slz_root:
         slz_default = alias_map.get("slz", "<your-slz-root-mg-id>")
         var_lines.append(f'$slzRootMgId = "{slz_default}"')
+        if slz_default.startswith("<") and slz_default.endswith(">"):
+            placeholder_vars.append("slzRootMgId")
     if needs_tenant_root:
         var_lines.append('$tenantRootMgId = "<your-tenant-root-mg-id>"')
+        placeholder_vars.append("tenantRootMgId")
     if needs_rg:
         var_lines.append('$rgName = "<your-resource-group>"')
+        placeholder_vars.append("rgName")
     vars_block = "\n".join(var_lines)
+
+    # Fail-fast if any angle-bracket placeholder survived. On Windows,
+    # az.cmd invocation via cmd.exe treats ``<`` in an argument as input
+    # redirection — producing "The system cannot find the file specified."
+    # which masquerades as a phantom success across all steps.
+    check_lines = []
+    for v in placeholder_vars:
+        # Build PowerShell check line with `.format` to avoid f-string / pwsh
+        # quote-nesting collisions. ``$(Get-Variable ...)`` echoes the actual
+        # placeholder value so the operator sees exactly which one they missed.
+        check_lines.append(
+            'if (${v} -like "<*>") {{ Write-Error "{v} still holds the '  # noqa: UP032
+            'placeholder \'$(Get-Variable {v} -ValueOnly)\'. Edit the '
+            'Variables block at the top of this script."; exit 2 }}'.format(v=v)
+        )
+    placeholder_check_ps1 = "\n".join(check_lines)
 
     whatif_steps = "\n\n".join(_ps1_step_block(s, "what-if", i + 1, len(steps)) for i, s in enumerate(steps))
     create_steps = "\n\n".join(_ps1_step_block(s, "create", i + 1, len(steps)) for i, s in enumerate(steps))
@@ -502,6 +545,12 @@ Write-Host "    active tenant: $tenantCurrent"
 {brownfield_block}
 # ---- Variables (fill in before running) ----
 {vars_block}
+
+# Guard: the angle-bracket placeholders above must be replaced before running.
+# On Windows az.cmd invokes cmd.exe which treats ``<`` as input redirection,
+# yielding "The system cannot find the file specified." — a phantom success
+# across every step if this check is not in place.
+{placeholder_check_ps1}
 
 Write-Host ""
 Write-Host "==> Wave 1 what-if pass ({len(steps)} template(s))"

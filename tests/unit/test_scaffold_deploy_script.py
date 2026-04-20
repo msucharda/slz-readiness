@@ -470,3 +470,34 @@ def test_tenant_id_never_inlined(tmp_path: Path) -> None:
     assert 'TENANT_EXPECTED="<tenant-id>"' in sh
     assert '$tenantExpected = "<tenant-id>"' in ps1
 
+
+def test_placeholder_guard_blocks_unedited_vars(tmp_path: Path) -> None:
+    """Unedited ``<your-*>`` placeholders must fail-fast before any ``az`` call.
+
+    Regression: Windows ``cmd.exe`` (which wraps ``az.cmd``) interprets ``<``
+    in an argument as input redirection, masking a 12-step catastrophic
+    failure as phantom success ("The system cannot find the file specified.").
+    The script must refuse to proceed while any declared variable still holds
+    its ``<...>`` placeholder.
+    """
+    emitted = _mk_emitted("management-groups", "archetype-policies")
+    write_deploy_script(out_dir=tmp_path, emitted=emitted)
+    sh = (tmp_path / "runbooks" / "deploy-all.sh").read_text(encoding="utf-8")
+    ps1 = (tmp_path / "runbooks" / "deploy-all.ps1").read_text(encoding="utf-8")
+
+    # Bash: guard uses a glob pattern match against ``<*>``.
+    for var in ("MG_ID", "LOCATION", "TENANT_ROOT_MG_ID"):
+        assert ('if [[ "${' + var + '}" == "<"*">" ]]') in sh, var
+        assert (var + " still holds the placeholder") in sh, var
+    # Bash: guard must run BEFORE the first what-if step.
+    guard_idx = sh.index("still holds the placeholder")
+    whatif_idx = sh.index("Wave 1 what-if pass")
+    assert guard_idx < whatif_idx
+
+    # PowerShell: uses ``-like "<*>"`` pattern.
+    for var in ("mgId", "location", "tenantRootMgId"):
+        assert ('if ($' + var + ' -like "<*>")') in ps1, var
+        assert (var + " still holds the placeholder") in ps1, var
+    ps1_guard_idx = ps1.index("still holds the placeholder")
+    ps1_whatif_idx = ps1.index("Wave 1 what-if pass")
+    assert ps1_guard_idx < ps1_whatif_idx
