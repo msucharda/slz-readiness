@@ -4,11 +4,11 @@
 
 | Attribute | Value |
 |---|---|
-| Architecture style | 4-phase unidirectional pipeline |
-| Data flow | Azure → `findings.json` → `gaps.json` → `plan.md` + `bicep/*.bicep` |
+| Architecture style | 5-phase unidirectional pipeline |
+| Data flow | Azure → `findings.json` → `mg_alias.json` → `gaps.json` → `plan.md` + `bicep/*.bicep` |
 | Safety model | Shell-level verb allowlist + citation guard + template closed-set |
-| Determinism | Discover/Evaluate/Scaffold = deterministic; Plan = LLM-narrated + citation-filtered |
-| Human-readable numbers | Every phase emits `<phase>.summary.{json,md}`; Scaffold rolls them up into `run.summary.md` — see [Phase Summaries](./phase-summaries.md) |
+| Determinism | Evaluate/Scaffold = deterministic; Reconcile CLI is schema-gated; Plan = LLM-narrated + citation-filtered |
+| Human-readable numbers | Phase CLIs emit `<phase>.summary.{json,md}`; Scaffold rolls them up into `run.summary.md` — see [Phase Summaries](/deep-dive/phase-summaries) |
 | Plugin host | GitHub Copilot CLI (APM format) |
 | Source-of-truth | Azure Landing Zones Library, pinned by git SHA |
 
@@ -23,15 +23,17 @@ flowchart LR
 
     subgraph Plugin["slz-readiness plugin"]
         direction LR
-        D["1 · Discover<br>6 modules"]:::p
-        E["2 · Evaluate<br>engine.py · 14 rules"]:::p
-        P["3 · Plan<br>LLM + citation guard"]:::p
-        S["4 · Scaffold<br>template registry"]:::p
+        D["1 · Discover<br>7 modules"]:::p
+        R["2 · Reconcile<br>MG aliases"]:::p
+        E["3 · Evaluate<br>engine.py · 18 rules"]:::p
+        P["4 · Plan<br>LLM + citation guard"]:::p
+        S["5 · Scaffold<br>template registry"]:::p
     end
 
     subgraph Arts["artifacts/&lt;run&gt;/"]
         direction LR
         F["findings.json"]:::a
+        A["mg_alias.json"]:::a
         G["gaps.json"]:::a
         PL["plan.md"]:::a
         B["bicep/*.bicep"]:::a
@@ -40,7 +42,8 @@ flowchart LR
 
     User["Operator"] --> D
     D -- "az list/show/get" --> Az
-    D --> F --> E
+    D --> F --> R --> A --> E
+    F --> E
     ALZ --> E
     E --> G
     G --> P --> PL
@@ -66,7 +69,7 @@ flowchart LR
 
 Everything else is implementation detail of these three:
 
-1. **Read-only against Azure.** The shell-level [`hooks/pre_tool_use.py:21`](https://github.com/msucharda/slz-readiness/blob/main/hooks/pre_tool_use.py#L21) `ALLOW_RE` admits `list|show|get|query|search|describe|export|version|account`, and `DENY_RE` blocks `create|delete|set|update|apply|deploy|assign|invoke|new|put|patch`. Gated to `az|azd|bicep` (`AZURE_TOOL_RE`).
+1. **Read-only against Azure.** The shell-level [`hooks/pre_tool_use.py:21`](https://github.com/msucharda/slz-readiness/blob/main/hooks/pre_tool_use.py#L21) `ALLOW_RE` admits read/validation verbs, and `DENY_RE` blocks `create|delete|set|update|apply|deploy|assign|invoke|new|put|patch`. Gated to `az|azd|bicep` (`AZURE_TOOL_RE`) plus raw HTTP transport checks.
 2. **Baseline is truth.** Every rule's [`baseline_ref`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/models.py) points at a file at a git SHA from [Azure-Landing-Zones-Library](https://github.com/Azure/Azure-Landing-Zones-Library). The baseline is vendored at [`data/baseline/alz-library/`](https://github.com/msucharda/slz-readiness/tree/main/data/baseline/alz-library), every blob's SHA recorded in `_manifest.json`, re-verified by CI ([`baseline_integrity.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/baseline_integrity.py)).
 3. **Deterministic Evaluate.** [`engine.py:51-140`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/engine.py#L51-L140) is pure Python. Output is sorted by `(rule_id, resource_id)`. Zero LLM calls. Tested by [`tests/unit/test_evaluate_golden.py`](https://github.com/msucharda/slz-readiness/blob/main/tests/unit/test_evaluate_golden.py).
 
@@ -81,14 +84,15 @@ classDiagram
     }
 
     class Finding {
-        +kind: str
+        +resource_type: str
         +scope: str
-        +data: dict
+        +observed_state: dict
+        +query_cmd: str
     }
 
-    class ErrorFinding {
-        +kind == "error_finding"
-        +data.error_kind: str
+    class AliasMap {
+        +role: str
+        +management_group_id: str | null
     }
 
     class Rule {
@@ -119,7 +123,8 @@ classDiagram
     }
 
     RunScope ..> Finding
-    Finding <|-- ErrorFinding
+    Finding ..> AliasMap : "reconciled into"
+    AliasMap ..> Rule : "retargets selectors"
     Finding ..> Rule : "evaluated against"
     Rule ..> Gap : "produces"
     Gap ..> BicepEmission : "drives"
@@ -200,7 +205,7 @@ sequenceDiagram
 | Fetch baseline at run time | Offline/air-gapped unusable; supply-chain drift |
 | Free-form Bicep generation | AVM compliance impossible to guarantee; what-if behaviour unstable |
 | Trust the prompt to stay read-only | One context-saturation bug → writes to production |
-| Single monolithic phase | Untestable; each phase is independently golden-testable |
+| Single monolithic phase | Untestable; each phase is independently testable and reviewable |
 
 ## Extension shape
 

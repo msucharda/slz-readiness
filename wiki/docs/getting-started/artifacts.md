@@ -8,6 +8,9 @@ Every run writes to `artifacts/<run-id>/`. The `<run-id>` is a UTC timestamp (`Y
 |---|---|---|---|
 | `findings.json` | Discover | 100 KB – 5 MB | Raw Azure metadata per scope |
 | `discover.summary.{json,md}` | Discover | 1 KB – 20 KB | Per-module status, error tallies, scope banner _(v0.5.0)_ |
+| `mg_alias.json` | Reconcile | 0.5 KB | Canonical SLZ role → tenant MG alias map |
+| `mg_alias.proposal.json` | Reconcile | 0.5 KB | Brownfield candidate mappings before schema-gated write |
+| `reconcile.summary.{json,md}` | Reconcile | 1 KB – 5 KB | Mode, role-mapping table, mapped/unmapped counts |
 | `gaps.json` | Evaluate | 2 KB – 50 KB | Deterministic diff vs baseline |
 | `evaluate.summary.{json,md}` | Evaluate | 1 KB – 15 KB | Tally by severity/area/status, compliance ratio _(v0.5.0)_ |
 | `plan.md` | Plan | 1 KB – 10 KB | LLM-narrated remediation (cited) |
@@ -19,7 +22,7 @@ Every run writes to `artifacts/<run-id>/`. The `<run-id>` is a UTC timestamp (`Y
 | `scaffold.manifest.json` | Scaffold | 1 KB – 5 KB | Per-gap trace of template emission |
 | `scaffold.summary.{json,md}` | Scaffold | 1 KB – 10 KB | Emitted templates, warnings, deploy commands _(v0.5.0)_ |
 | `how-to-deploy.md` | Scaffold | 3 KB – 15 KB | Operator runbook — Audit → Observe → Enforce waves, Bash + PowerShell, DINE role-assignment recipe _(v0.5.1)_ |
-| `run.summary.md` | Scaffold (roll-up) | 5 KB – 50 KB | Concatenation of all four phase summaries _(v0.5.0)_ |
+| `run.summary.md` | Scaffold (roll-up) | 5 KB – 50 KB | Concatenation of phase summaries |
 | `trace.jsonl` | All | 10 KB – 500 KB | NDJSON event stream — every `az` call, rule fire, template emit |
 
 See [Phase Summaries](../deep-dive/phase-summaries.md) for the determinism contract behind the `.summary.*` files. See [Phased Rollout & Scope-Aware Deployment](../deep-dive/phased-rollout.md) for the v0.5.1 `how-to-deploy.md` runbook.
@@ -30,6 +33,7 @@ See [Phase Summaries](../deep-dive/phase-summaries.md) for the determinism contr
 flowchart TB
     subgraph Run["artifacts/&lt;run-id&gt;/"]
         F["findings.json"]:::a
+        A["mg_alias.json"]:::a
         G["gaps.json"]:::a
         P["plan.md"]:::a
         PD["plan.dropped.md"]:::a
@@ -42,7 +46,11 @@ flowchart TB
 
     Discover --> F
     Discover --> T
+    F --> Reconcile
+    Reconcile --> A
+    Reconcile --> T
     F --> Evaluate
+    A --> Evaluate
     Evaluate --> G
     Evaluate --> T
     G --> Plan
@@ -73,19 +81,22 @@ Shape (simplified):
   },
   "findings": [
     {
-      "kind": "mg_hierarchy",
+      "resource_type": "microsoft.management/managementgroups.summary",
       "scope": "tenant",
-      "data": { "management_groups": [...] }
+      "observed_state": { "present_ids": ["slz", "platform"] },
+      "query_cmd": "az account management-group list ..."
     },
     {
-      "kind": "policy_assignment",
+      "resource_type": "microsoft.authorization/policyassignments",
       "scope": "mg/root",
-      "data": { "name": "...", "policyDefinitionId": "...", "enforcementMode": "Default" }
+      "observed_state": { "name": "...", "policyDefinitionId": "...", "enforcementMode": "Default" },
+      "query_cmd": "az policy assignment list ..."
     },
     {
-      "kind": "error_finding",
+      "resource_type": "error",
       "scope": "subscription/sub-c",
-      "data": { "error_kind": "permission_denied", "detail": "..." }
+      "observed_state": { "error_kind": "permission_denied", "detail": "..." },
+      "query_cmd": "az ..."
     }
   ]
 }
@@ -98,9 +109,27 @@ Shape (simplified):
 Inspect with:
 
 ```bash
-jq '.findings | group_by(.kind) | map({kind: .[0].kind, count: length})' \
+    jq '.findings | group_by(.resource_type) | map({resource_type: .[0].resource_type, count: length})' \
     artifacts/<run>/findings.json
 ```
+
+## `mg_alias.json`
+
+Shape:
+
+```json
+{
+  "slz": "customer-sovereign-root",
+  "platform": "customer-platform",
+  "management": "customer-management",
+  "corp": null
+}
+```
+
+The real file contains all 14 canonical SLZ roles. `null` means "use the
+canonical role name / no alias". The Reconcile CLI validates role names,
+non-null uniqueness, and membership in Discover's `present_ids`; the post hook
+repairs direct file-write drift defensively.
 
 ## `gaps.json`
 
@@ -146,14 +175,15 @@ jq '.gaps | group_by(.severity) | map({severity: .[0].severity, count: length})'
 
 ## `plan.md`
 
-Human-readable, structured by design area. Every bullet starts with `- [rule_id: X]` or is stripped.
+Human-readable, structured by design area. Every recommendation bullet must
+carry a `(rule_id: X)` citation that names a known rule, or it is stripped.
 
 Example slice:
 
 ```markdown
 ## Sovereignty
 
-- [rule_id: sovereignty.confidential_corp_policies_applied] The Confidential Corp
+- (rule_id: sovereignty.confidential_corp_policies_applied) The Confidential Corp
   management group is missing the sovereignty policy set pinned at SHA
   `c1cbff38-87c0-4b9f-9f70-035c7a3b5523`. Apply via Scaffold-emitted
   `sovereignty-confidential-policies-confidential_corp.bicep`.
@@ -161,7 +191,7 @@ Example slice:
 
 ### `plan.dropped.md`
 
-If the model produced bullets without the `(rule_id: X)` marker, [`hooks/post_tool_use.py:21`](https://github.com/msucharda/slz-readiness/blob/main/hooks/post_tool_use.py#L21) moves them here and out of `plan.md`. Treat as a debug artifact — don't cite it in audit evidence.
+If the model produced bullets without the `(rule_id: X)` marker, [`hooks/post_tool_use.py:37`](https://github.com/msucharda/slz-readiness/blob/main/hooks/post_tool_use.py#L37) moves them here and out of `plan.md`. Treat as a debug artifact — don't cite it in audit evidence.
 
 ## `bicep/*.bicep` and `params/*.parameters.json`
 
@@ -222,6 +252,8 @@ One JSON object per line. Events from [`scripts/slz_readiness/_trace.py`](https:
 | `discoverer.begin` | Before each module | module name |
 | `discoverer.end` | After each module | count of findings |
 | `discoverer.error` | On module failure | AzError kind |
+| `reconcile.begin` / `reconcile.end` | Reconcile wrapping | mode, mapped/unmapped counts |
+| `reconcile.brownfield.accepted` | Brownfield alias accepted | mapped count, proposal source |
 | `az.cmd` | Every `az` call | args, duration_ms, returncode |
 | `rule.fire` | Evaluate, per rule | rule_id, aggregate, n_gaps |
 | `template.emit` | Scaffold, per template | template, scope, bicep path |

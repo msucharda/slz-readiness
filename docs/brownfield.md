@@ -1,25 +1,26 @@
 # Brownfield tenants — running slz-readiness against an already-deployed landing zone
 
-`slz-readiness` was strictly greenfield in v0.5.x. **v0.6.0** added the
-`/slz-reconcile` phase (Evaluate retargeting only). **v0.7.0** closes
-the loop: Discover, Evaluate, AND Scaffold all consume `mg_alias.json`,
-giving brownfield operators end-to-end output that's actually usable.
+`slz-readiness` now treats brownfield mapping as a first-class phase.
+`/slz-reconcile` bridges Discover and Evaluate by producing
+`mg_alias.json`, and Discover, Evaluate, and Scaffold all consume that
+mapping so existing management-group names can be used end-to-end.
 
 If you've already deployed a landing zone — CAF ALZ with custom names,
 in-house hierarchy, partner-delivered platform — run `/slz-reconcile`
 once after `/slz-discover` and the rest of the pipeline retargets to
 your real management groups.
 
-## What v0.7.0 closes
+## What brownfield support covers
 
-| Phase | Pre-v0.6.0 behaviour | v0.7.0 behaviour |
-|---|---|---|
-| Discover | Probed only the 14 canonical SLZ MG names | Probes the **union** of canonical names + non-null entries from `mg_alias.json`; captures `policyDefinitionId`, `enforcementMode`, `notScopes` per assignment |
-| Evaluate | Rules pinned `scope: mg/<slz-name>` literally | Selector-rewrite via `mg_alias.json` (v0.6.0); plus def-id fallback so renamed Microsoft built-in policy assignments still match (v0.7.0) |
-| Plan | Faithfully narrated parallel-universe gaps | Narrates real gaps after retargeting + def-id equivalence |
-| Scaffold | Emitted full parallel SLZ tree | Skips assignments matched by name OR `policyDefinitionId` (consequence of Evaluate's def-id fallback); `how-to-deploy.md` advertises the alias map so operators know which `MG_ID` to substitute per-template |
+| Phase | Current behaviour |
+|---|---|
+| Discover | Probes the **union** of canonical names + non-null entries from `mg_alias.json`; captures `policyDefinitionId`, `enforcementMode`, `notScopes` per assignment |
+| Reconcile | Writes a schema-validated role-to-MG alias file, either all-null for greenfield or operator-confirmed for brownfield |
+| Evaluate | Rewrites selectors via `mg_alias.json`; policy-assignment matchers also use definition-id fallback so renamed Microsoft built-ins still count |
+| Plan | Narrates real gaps after alias retargeting + definition-id equivalence |
+| Scaffold | Skips assignments matched by name OR `policyDefinitionId`; `how-to-deploy.md` and optional runbooks use the alias map for target MGs |
 
-End-to-end on a brownfield tenant in v0.7.0:
+End-to-end on a brownfield tenant:
 
 1. `/slz-discover` enumerates customer MGs and probes both canonical
    and aliased scopes (after Reconcile has run, or just canonical on
@@ -35,12 +36,12 @@ End-to-end on a brownfield tenant in v0.7.0:
    accompanying `how-to-deploy.md` shows the alias mapping so the
    operator substitutes the right MG id at deploy time.
 
-## Workarounds that are now obsolete
+## Workarounds that are obsolete
 
-The four interim workarounds documented in v0.5.x are still listed
-below for historical reference, but **with v0.7.0 only #2 remains
-relevant** as a deliberate migration strategy. #1, #3, #4 are now
-served by `/slz-reconcile` + the v0.7.0 retargeting tracks.
+The four interim workarounds from the early greenfield-only releases are
+listed below for historical reference. Only #2 remains relevant as a
+deliberate migration strategy; #1, #3, and #4 are served by
+`/slz-reconcile` and the retargeting path.
 
 ### 1. ~~Rename your MGs to SLZ shape~~ — obsolete
 
@@ -67,16 +68,15 @@ available on brownfield tenants too.
 
 ## Limitations still in scope for future versions
 
-v0.7.0 closes the structural retargeting loop but does NOT yet handle:
+The structural retargeting loop does NOT yet handle:
 
 - **Policy-parameter drift** — your assignment may have the right
   `policyDefinitionId` but customised parameters (e.g. allowed-locations
-  list) that don't match the SLZ defaults. Today these still surface as
-  "satisfied" by def-id; v0.8.0 will add a parameter-equivalence matcher
-  (rung C in the research notes).
+  list) that don't match the SLZ defaults. Parameter-drift rules surface the
+  issue as reviewable, informational gaps rather than auto-remediation.
 - **Custom initiative tree-walks** — assignments that bind to a custom
-  initiative containing the canonical built-in policy will not match by
-  def-id. v0.8.0 will recursively flatten initiatives (rung D).
+  initiative containing the canonical built-in policy do not always match by
+  def-id.
 - **Hierarchy-reshape** — if your MG tree shape (parent/child relations)
   fundamentally differs from SLZ's canonical shape, only roles you
   explicitly alias get retargeted. Genuinely incompatible shapes are
@@ -106,7 +106,7 @@ Evaluate's deterministic contract is preserved:
 `(findings.json, mg_alias.json) → gaps.json` is byte-stable across
 re-runs.
 
-### Structural scoring (v0.10.0+)
+### Structural scoring
 
 The heuristic proposer in
 [`scripts/slz_readiness/reconcile/proposer.py`](../scripts/slz_readiness/reconcile/proposer.py)
@@ -129,8 +129,8 @@ signals can reference it), then in the declared pattern order so
 more-specific patterns like `confidential_corp` still claim before
 the less-specific `corp`.
 
-This replaced the v0.8.0 first-match-wins logic that mis-mapped
-`slz → <tenant-root-GUID>` on real SLZ deployments where the customer
+This replaced the earlier first-match-wins logic that mis-mapped
+`slz -> <tenant-root-GUID>` on real SLZ deployments where the customer
 had a non-canonical intermediate MG under the tenant root.
 
 ## Reporting
@@ -139,6 +139,4 @@ If your tenant doesn't fit the patterns this doc describes (e.g.
 multi-region sub-hierarchies, mixed greenfield/brownfield where some
 roles exist canonically and others don't, or customer policies that
 share a `policyDefinitionId` with a baseline policy but configure it
-materially differently), please open an issue. v0.8.0 design depends
-on understanding the long tail.
-
+  materially differently), please open an issue.

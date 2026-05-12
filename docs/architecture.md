@@ -21,10 +21,12 @@ Cloud Adoption Framework baseline.
   re-run after Reconcile). Captures `policyDefinitionId`, `enforcementMode`,
   `notScopes` per assignment so Evaluate can match by definition-id.
 - **Reconcile** (`skills/reconcile`, `scripts/slz_readiness/reconcile/`) —
-  the only LLM-writes-artifact phase. Walks the 14 SLZ roles and asks the
+  the brownfield bridge between Discover and Evaluate. The Copilot skill may
+  propose mappings, but the CLI is a deterministic schema-gated writer: it
+  walks the 14 SLZ roles and asks the
   operator (per-role `ask_user` enum) which of their MGs plays each role.
   Writes `mg_alias.json`. Schema-validated by `reconcile/schema.py`;
-  non-null values that don't appear in tenant's `present_ids` are silently
+  non-null values that don't appear in tenant's `present_ids` are
   rewritten to `null` by the post-tool-use hook and recorded in
   `mg_alias.dropped.md`. Greenfield short-circuits to an all-null map.
 - **Evaluate** (`skills/evaluate`, `scripts/slz_readiness/evaluate/`) — pure
@@ -53,10 +55,11 @@ Cloud Adoption Framework baseline.
   `data/baseline/alz-library/` is never mutated — the rewrite is a pure
   transform in `engine._downshift_deny_to_audit`.
 
-### LLM-writes-artifact invariant
+### Brownfield alias invariant
 
-Reconcile is the only phase whose **output** is shaped by an LLM. The
-non-determinism is funnelled through three guards:
+`mg_alias.json` is the only cross-phase artifact whose candidate content may
+start from LLM reasoning. The non-determinism is funnelled through three
+guards before Evaluate or Scaffold consume it:
 
 1. **Per-decision `ask_user`** — operator confirms every role→MG mapping
    individually with a structured enum. No batched accept.
@@ -91,7 +94,7 @@ Evaluate's deterministic contract is preserved:
 - `findings.json` — `{ findings: [{ resource_type, resource_id, scope, observed_state, query_cmd }] }`. Policy-assignment `observed_state` includes `policyDefinitionId`, `enforcementMode`, `notScopes` (v0.7.0).
 - `mg_alias.json` — `{ "<canonical-slz-role>": "<customer-mg-name-or-null>" }` for all 14 roles.
 - `gaps.json` — `{ gaps: [{ rule_id, severity, design_area, observed, expected, baseline_ref: {path, sha}, resource_id }] }`. The `archetype_policies_applied` matcher's `observed` snapshot includes `matched_by_defid` listing renamed assignments treated as satisfied.
-- `plan.md` — grouped by design area, every bullet starts with `[rule_id: …]`.
+- `plan.md` — grouped by design area, every recommendation bullet cites `(rule_id: …)`.
 - `scaffold.manifest.json` — `{ emitted: [{ template, bicep, params, rule_ids }] }`
 
 ## Baseline pin

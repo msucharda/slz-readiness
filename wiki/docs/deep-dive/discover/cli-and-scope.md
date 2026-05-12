@@ -114,17 +114,17 @@ sequenceDiagram
     participant Az as az_common.run_az
     participant Out as findings.json
 
-    Op->>CLI: slz-discover --tenant T --all-subscriptions --run-id R
+    Op->>CLI: slz-discover --out artifacts/R/findings.json --tenant T --all-subscriptions
     CLI->>CLI: validate flags (cli.py:88-154)
     CLI->>Trace: set run_id ContextVar
-    CLI->>Disc: iterate 6 modules
+    CLI->>Disc: iterate 7 modules
     loop per discoverer
         Disc->>Az: run_az("az ... list/show")
         Az-->>Disc: parsed JSON OR AzError
         alt success
             Disc->>Disc: emit Finding objects
         else AzError
-            Disc->>Disc: emit error_finding (data.error_kind=...)
+            Disc->>Disc: emit error finding (observed_state.error_kind=...)
         end
         Disc->>Trace: append ndjson event
     end
@@ -137,16 +137,16 @@ sequenceDiagram
 
 ## Run-id and artifact layout
 
-`--run-id` defaults to a UTC timestamp (`YYYYMMDD-HHMMSSZ`). The CLI creates `artifacts/<run-id>/` and writes:
+The output path's parent is the run directory, typically `artifacts/<run-id>/`. The CLI writes:
 
 - `findings.json` — the combined finding list
 - `trace.jsonl` — NDJSON of discoverer start/stop, subprocess spawns, errors
 
-Subsequent phases (Evaluate, Plan, Scaffold) reuse the same `<run-id>` directory so all four artifacts are co-located.
+Subsequent phases (Reconcile, Evaluate, Plan, Scaffold) reuse the same `<run-id>` directory so all artifacts are co-located.
 
 ## Progress reporting
 
-`--progress` (default on when stderr is a TTY) pipes through [`_progress.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/_progress.py) which prints a compact `[3/6] policy_assignments …` line. In CI it's silenced by default to keep logs readable.
+Progress output pipes through [`_progress.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/_progress.py), which prints compact per-discoverer status lines to stderr.
 
 ## Failure semantics
 
@@ -162,8 +162,8 @@ flowchart LR
     Start --> All
 
     Ok --> Emit["emit domain findings"]:::t
-    One --> EmitBoth["emit domain findings<br>+ error_finding"]:::t
-    All --> EmitErr["emit error_finding only<br>(still exit 0)"]:::t
+    One --> EmitBoth["emit domain findings<br>+ error finding"]:::t
+    All --> EmitErr["emit error finding only<br>(still exit 0)"]:::t
 
     EmitBoth --> Next["next discoverer runs"]:::t
     EmitErr --> Next
@@ -175,10 +175,10 @@ flowchart LR
     classDef bad fill:#1c2128,stroke:#f85149,color:#e6edf3;
 ```
 
-Discoverer failures are **findings, not exceptions.** Evaluate turns an `error_finding` into a `Gap(status=unknown)`. Scaffold skips unknowns. The operator sees a plan bullet saying "could not observe — permission denied at scope X" instead of a silent missing gap.
+Discoverer failures are **findings, not exceptions.** Evaluate turns in-scope error findings into `Gap(status=unknown)`. Scaffold skips unknowns. The operator sees a plan bullet saying "could not observe - permission denied at scope X" instead of a silent missing gap.
 
 ## Related reading
 
-- [Discoverers](/deep-dive/discover/discoverers) — the 6 modules in detail.
+- [Discoverers](/deep-dive/discover/discoverers) — the 7 modules in detail.
 - [The `az` wrapper](/deep-dive/discover/az-wrapper) — subprocess, trace, classification.
 - [Rule Engine](/deep-dive/evaluate/rule-engine) — how error findings become unknown gaps.

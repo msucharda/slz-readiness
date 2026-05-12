@@ -11,8 +11,8 @@ A VitePress-based wiki for `slz-readiness`. Source under `wiki/docs/`. Entry con
 ```bash
 cd wiki
 npm install          # only on first run
-npm run docs:dev     # local preview at http://localhost:5173
-npm run docs:build   # static output under docs/.vitepress/dist/
+npm run dev          # local preview at http://localhost:5173
+npm run build        # static output under docs/.vitepress/dist/
 ```
 
 > **Do not commit** `node_modules/` or `docs/.vitepress/dist/`.
@@ -48,7 +48,7 @@ wiki/
 ## Editing a page
 
 1. Edit the `.md` file directly.
-2. Preview with `npm run docs:dev`.
+2. Preview with `npm run dev`.
 3. Confirm every new claim has a linked citation.
 4. Confirm new Mermaid diagrams follow the palette + autonumber rules.
 

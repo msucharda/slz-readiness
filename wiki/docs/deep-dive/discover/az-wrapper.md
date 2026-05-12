@@ -146,5 +146,5 @@ Keeping these three concerns in one function means every Azure call is guarantee
 
 ## Related reading
 
-- [Discoverers](/deep-dive/discover/discoverers) — how the 6 modules use `run_az`.
+- [Discoverers](/deep-dive/discover/discoverers) — how the 7 modules use `run_az`.
 - [Architecture](/deep-dive/architecture) — where error findings flow in the pipeline.

@@ -146,7 +146,7 @@ flowchart TB
 
 | # | Decision | Alternative considered | Why chosen | Risk if reversed |
 |---:|---|---|---|---|
-| 1 | **Pure-Python deterministic Evaluate** | LLM-driven gap analysis | Reproducible; auditable; fast (< 100 ms for 14 rules); testable via golden fixtures | Auditors can't trust gap provenance |
+| 1 | **Pure-Python deterministic Evaluate** | LLM-driven gap analysis | Reproducible; auditable; fast for the current 18-rule set; testable via golden fixtures | Auditors can't trust gap provenance |
 | 2 | **Pin ALZ library by git SHA** | Track `main` branch | Upstream evolves weekly; drifting baseline = unstable gaps; SHA = reproducibility | Gap instability, CI flakes |
 | 3 | **Vendor baseline into repo** ([`data/baseline/alz-library/`](https://github.com/msucharda/slz-readiness/tree/main/data/baseline/alz-library)) | Fetch at run time | Offline use; air-gapped tenants; CI integrity gate re-hashes blob-by-blob | Network dependency; supply-chain risk |
 | 4 | **Pre-tool verb allowlist** ([`hooks/pre_tool_use.py:21`](https://github.com/msucharda/slz-readiness/blob/main/hooks/pre_tool_use.py#L21)) | Trust the prompt | Regex-enforced; no model can "forget"; only ~10 LoC | Agent could be prompted into writes |
@@ -359,7 +359,7 @@ Under context pressure, the model can forget the `(rule_id: X)` convention. `pos
 |---|---|---|---|
 | Discover (one sub) | ~30–60s | `az` sequential calls | Partially — discoverers run serially today, each may issue parallel sub-calls |
 | Discover (`--all-subscriptions`, 50 subs) | ~5–15 min | RBAC + policy-state fan-out | Fan-out per sub is capped by rate limits |
-| Evaluate | < 100 ms for 14 rules | YAML load + O(rules × findings) | Not worth it |
+| Evaluate | Fast for 18 rules | YAML load + O(rules × findings) | Not worth it |
 | Plan | 15–60s | LLM turn + sequential-thinking MCP | Not parallelizable — narration is inherently sequential |
 | Scaffold | < 1s | JSON-Schema validation + file writes | Not worth it |
 
@@ -367,7 +367,7 @@ Under context pressure, the model can forget the `(rule_id: X)` convention. `pos
 
 ## Concurrency model
 
-- **Discover:** one process, 6 discoverers sequentially. Each discoverer may spawn multiple `az` subprocesses in sequence (not in parallel — `az` has its own cache collision issues). ContextVar-based tracer inherits into every frame.
+- **Discover:** one process, 7 discoverers sequentially. Each discoverer may spawn multiple `az` subprocesses in sequence (not in parallel — `az` has its own cache collision issues). ContextVar-based tracer inherits into every frame.
 - **Evaluate:** single-threaded, single-pass, sorted output. No concurrency.
 - **Plan:** single LLM turn, plus sequential-thinking MCP calls.
 - **Scaffold:** single-threaded, file I/O bounded.
@@ -495,13 +495,13 @@ sequenceDiagram
     participant Git
     participant CI as release.yml
 
-    Maintainer->>Release: python scripts/release.py --version 0.5.0
-    Release->>Files: rewrite all four versions
-    Release->>Git: git commit -am "release: v0.5.0"
-    Release->>Git: git tag v0.5.0
+    Maintainer->>Release: python scripts/release.py 0.14.8
+    Release->>Files: rewrite all five versions
+    Release->>Git: git commit -am "release: v0.14.8"
+    Release->>Git: git tag v0.14.8
     Release->>Git: git push --follow-tags
     Git-->>CI: tag trigger
-    CI->>CI: verify all four versions == tag
+    CI->>CI: verify all five versions == tag
     alt mismatch
         CI-->>Maintainer: fail — manual cleanup required
     else match

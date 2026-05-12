@@ -1,6 +1,6 @@
 # llms.txt
 
-> LLM-readable index for the slz-readiness wiki. Source repo: [msucharda/slz-readiness](https://github.com/msucharda/slz-readiness). Version: 0.4.0.
+> LLM-readable index for the slz-readiness wiki. Source repo: [msucharda/slz-readiness](https://github.com/msucharda/slz-readiness). Version: 0.14.8.
 
 ## Onboarding
 
@@ -14,11 +14,11 @@
 - [Overview](/getting-started/overview): What slz-readiness is.
 - [Installation](/getting-started/installation): Plugin install + Azure prerequisites.
 - [Quick Start](/getting-started/quick-start): First audit end-to-end.
-- [Artifacts](/getting-started/artifacts): findings.json, gaps.json, plan.md, bicep/.
+- [Artifacts](/getting-started/artifacts): findings.json, mg_alias.json, gaps.json, plan.md, bicep/.
 
 ## Deep dive
 
-- [Architecture](/deep-dive/architecture): 4-phase pipeline, data contracts.
+- [Architecture](/deep-dive/architecture): 5-phase pipeline, data contracts.
 - [Plugin Mechanics](/deep-dive/plugin-mechanics): apm.yml, skills, prompts.
 - [Hooks](/deep-dive/hooks): Pre/post tool-use guards.
 - [Discover: CLI & Scope](/deep-dive/discover/cli-and-scope)

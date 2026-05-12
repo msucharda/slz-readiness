@@ -120,12 +120,12 @@ flowchart LR
 | Supply chain: the ALZ library is compromised upstream | Very low | Very high | Blob manifest re-hashed in CI; pin moves require explicit PR |
 | Plugin host (Copilot CLI) changes API | Medium | Low | APM format is Microsoft-owned; plugin.json is standardised |
 
-## What's in scope today (v0.4.0)
+## What's in scope today (v0.14.8)
 
-- **14 rules** covering: management group hierarchy, identity platform, logging/monitoring, policy assignments (sovereign root), sovereignty-confidential (Corp + Online), 8 archetype rules (ALZ connectivity/corp/decommissioned/identity/landing-zones/platform/sandbox + SLZ public).
-- **6 discoverer modules** covering: management groups, subscription inventory, policy assignments, identity RBAC, logging/monitoring (Log Analytics workspaces), sovereignty policy states.
-- **7 AVM Bicep templates**: management-groups, policy-assignment, sovereignty-global-policies, sovereignty-confidential-policies, archetype-policies, log-analytics, role-assignment.
-- **5 slash commands** in Copilot CLI: `/slz-discover`, `/slz-evaluate`, `/slz-plan`, `/slz-scaffold`, `/slz-run`.
+- **18 rules** covering: management group hierarchy, identity platform, logging/monitoring, sovereign-root policy assignments, sovereignty-confidential Corp/Online, ALZ/SLZ archetype policy coverage, and informational parameter-drift checks.
+- **7 discoverer modules** covering: management groups, subscription inventory, policy assignments, custom initiatives, identity RBAC, logging/monitoring, and sovereignty policy states.
+- **8 AVM Bicep templates**: management-groups, policy-assignment, alz-policy-definitions, sovereignty-global-policies, sovereignty-confidential-policies, archetype-policies, log-analytics, role-assignment.
+- **6 slash commands** in Copilot CLI: `/slz-discover`, `/slz-reconcile`, `/slz-evaluate`, `/slz-plan`, `/slz-scaffold`, `/slz-run`.
 - **Multi-OS support**: Linux, macOS, Windows (CI-tested on all three).
 
 ## Explicitly out of scope
@@ -188,14 +188,14 @@ Where to spend, in priority order:
 
 ## Maturity assessment
 
-At **v0.4.0**, the tool is:
+At **v0.14.8**, the tool is:
 
-- **Architecturally complete**: the 4-phase contract is frozen; the extension points are clear.
+- **Architecturally complete**: the 5-phase contract is clear, including brownfield Reconcile.
 - **Mechanically safe**: hook-enforced read-only; hook-enforced citation integrity.
 - **CI-gated**: lint, mypy, pytest (3 OSes), baseline integrity, rules-resolve, bicep build.
-- **Coverage-growing**: 14 rules today; growth is purely YAML addition.
+- **Coverage-growing**: 18 rules today; most growth is YAML addition.
 
-Missing from the v0.4.0 envelope (intentional):
+Still intentionally out of scope:
 
 - Authentication story beyond `az login`'s device-code flow (no CI service-principal template).
 - Terraform emitter.

@@ -11,7 +11,7 @@
 | Input | `gaps.json` |
 | Output | `plan.md` (+ `plan.dropped.md` if any bullets failed the guard) |
 
-This is the **only** phase where the LLM does meaningful reasoning. It's bracketed by a strict structural contract.
+This is the primary narrative phase where the LLM does meaningful remediation reasoning. Reconcile may use LLM reasoning for candidate alias proposals, but Plan is the phase that writes operator-facing prose and is bracketed by a strict structural contract.
 
 ## The contract
 
@@ -70,18 +70,18 @@ The Plan skill's prompt coaches the model into a consistent shape:
 ```markdown
 ## sovereignty (2 gaps)
 
-- [rule_id: sovereignty.slz.global_policies] **high** — SLZ Global policy set
-  (`c1cbff38-87c0-4b9f-9f70-035c7a3b5523`) is not assigned at tenant root.
+- (rule_id: policy.slz.sovereign_root_policies_applied) **critical** — SLZ Global policy set
+  is not assigned at the sovereign root management group.
   The scaffold phase will emit a policy assignment at tenant root using the
   `sovereignty-global-policies` AVM template. Review and apply with
   `az deployment tenant what-if --template-file ...` before `create`.
 
-- [rule_id: sovereignty.slz.confidential_policies] **high** — ...
+- (rule_id: sovereignty.confidential_corp_policies_applied) **critical** — ...
 ```
 
 Key features:
 
-- Rule id in square brackets at the start (machine-parsable).
+- Rule id in parenthesized `(rule_id: X)` form (machine-parsable by the current hook).
 - Severity prefix in bold.
 - Observed data (what was found vs expected) comes first.
 - Named template reference — operators can cross-check against `ALLOWED_TEMPLATES`.
@@ -93,16 +93,16 @@ Examples of bullets the guard kills (real LLM-failure modes observed):
 
 ```markdown
 - The tenant needs to apply the global sovereignty policy
-- (sovereignty.slz.global_policies) Assign the policy set at tenant root
-- [rule_id: sovereignty.policies] Apply it
-- [rule_id: archetype.nonexistent.policies] Archetype X missing policies
+- (policy.slz.sovereign_root_policies_applied) Assign the policy set at tenant root
+- [rule_id: policy.slz.sovereign_root_policies_applied] Apply it
+- (rule_id: archetype.nonexistent_policies_applied) Archetype X missing policies
 ```
 
 | Line | Fail reason |
 |---|---|
 | 1 | No `rule_id:` citation |
-| 2 | Wrong marker — parentheses, not `rule_id:` |
-| 3 | `rule_id:` present but `sovereignty.policies` isn't a known rule |
+| 2 | Wrong marker — missing `rule_id:` |
+| 3 | Wrong delimiter for the current hook — use `(rule_id: X)` |
 | 4 | Cited rule doesn't exist in `scripts/evaluate/rules/` |
 
 See [Hooks](/deep-dive/hooks) for the regex details.

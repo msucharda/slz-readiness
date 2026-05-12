@@ -47,19 +47,21 @@ journey
 
 Each box is a conversation step in Copilot CLI. The humans in the loop are **you and your team**, not the tool.
 
-## The four phases in plain English
+## The five phases in plain English
 
 ```mermaid
 flowchart LR
     A["1. Look"]:::p1
-    B["2. Compare"]:::p2
-    C["3. Narrate"]:::p3
-    D["4. Scaffold"]:::p4
+    B["2. Map"]:::p2
+    C["3. Compare"]:::p3
+    D["4. Narrate"]:::p4
+    S["5. Scaffold"]:::p4
 
     A -- "What do we have?" --> B
-    B -- "What should we have?" --> C
-    C -- "What do we tell the team?" --> D
-    D -- "How do we fix it?" --> E["Human reviews,<br>team deploys"]:::p5
+    B -- "Which existing MGs match SLZ roles?" --> C
+    C -- "What should we have?" --> D
+    D -- "What do we tell the team?" --> S
+    S -- "How do we fix it?" --> E["Human reviews,<br>team deploys"]:::p5
 
     classDef p1 fill:#2d333b,stroke:#6d5dfc,color:#e6edf3;
     classDef p2 fill:#2d333b,stroke:#6d5dfc,color:#e6edf3;
@@ -69,9 +71,10 @@ flowchart LR
 ```
 
 1. **Look** — the tool asks Azure (read-only) what management groups, subscriptions, policy assignments, identity setup, logging, and sovereignty controls exist.
-2. **Compare** — it contrasts what it saw against Microsoft's published baseline, pinned to a specific version.
-3. **Narrate** — it summarises gaps in plain English, with a citation pointing to the exact baseline rule.
-4. **Scaffold** — for each gap, it produces a Bicep infrastructure-as-code template your platform team can deploy.
+2. **Map** — if the tenant is brownfield, it maps existing management groups to canonical SLZ roles with operator confirmation.
+3. **Compare** — it contrasts what it saw against Microsoft's published baseline, pinned to a specific version.
+4. **Narrate** — it summarises gaps in plain English, with a citation pointing to the exact baseline rule.
+5. **Scaffold** — for each scaffoldable gap, it produces Bicep infrastructure-as-code your platform team can review and deploy.
 
 The tool never touches Azure for writes. Ever. Your platform team clicks "deploy."
 
@@ -79,19 +82,18 @@ The tool never touches Azure for writes. Ever. Your platform team clicks "deploy
 
 | Capability | Status | What it means |
 |---|---|---|
-| Management group hierarchy check | ✅ v0.4.0 | Confirms the ALZ management group tree shape exists |
-| Subscription inventory | ✅ v0.4.0 | Lists every subscription under the tenant |
-| Policy assignment check (root) | ✅ v0.4.0 | Confirms sovereign root policies are applied |
-| Sovereignty-Confidential Corp | ✅ v0.4.0 | Specific policies for sovereignty-confidential workloads |
-| Sovereignty-Confidential Online | ✅ v0.4.0 | Specific policies for online-facing sovereign workloads |
-| Archetype policy checks (8) | ✅ v0.4.0 | ALZ connectivity, corp, decommissioned, identity, landing zones, platform, sandbox; plus SLZ public |
-| Logging / Log Analytics check | ✅ v0.4.0 | Confirms the required workspace exists in management subscription |
-| Identity platform MG check | ✅ v0.4.0 | Confirms the identity-platform management group exists |
-| Evidence-grade citations | ✅ v0.4.0 | Every gap links to the exact baseline file at a pinned version |
-| Bicep scaffolding | ✅ v0.4.0 | Azure Verified Modules only; schema-validated |
-| Deterministic output | ✅ v0.4.0 | Same inputs = same results, reproducible across machines |
-| Multi-OS | ✅ v0.4.0 | Linux, macOS, Windows |
-| Terraform output | ❌ Not planned for v0.4 | Bicep-only today |
+| Management group hierarchy check | Current | Confirms the ALZ/SLZ management group tree shape exists |
+| Brownfield alias mapping | Current | Maps existing management-group names to canonical SLZ roles |
+| Subscription inventory | Current | Lists every subscription under the tenant |
+| Policy assignment checks | Current | Confirms sovereign root, confidential, and archetype policies are applied |
+| Policy-parameter drift review | Current | Surfaces reviewable parameter drift without auto-remediation |
+| Logging / Log Analytics check | Current | Confirms the required workspace exists in management subscription |
+| Identity platform MG check | Current | Confirms the identity-platform management group exists |
+| Evidence-grade citations | Current | Every gap links to the exact baseline file at a pinned version |
+| Bicep scaffolding | Current | Azure Verified Modules only; schema-validated |
+| Deterministic output | Current | Same inputs = same results, reproducible across machines |
+| Multi-OS | Current | Linux, macOS, Windows |
+| Terraform output | Out of scope | Bicep-only today |
 | Continuous monitoring | ❌ Out of scope | Use Defender for Cloud alongside |
 | Drift comparison (audit-over-audit) | ⏳ Future | Compare last-run vs current run |
 | Service-principal auth | ⏳ Future | Today uses interactive `az login` |

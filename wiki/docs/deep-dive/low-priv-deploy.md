@@ -255,6 +255,6 @@ After the runbook succeeds, the remaining templates (`log-analytics`, `archetype
 |---|---|
 | [Phased Rollout & Scope-Aware Deployment](./phased-rollout.md) | How `TEMPLATE_SCOPES` drives `az deployment <scope>` command emission |
 | [Scaffold: Engine & Registry](./scaffold/engine-and-registry.md) | Closed-set template discipline that `TEMPLATE_RUNBOOKS` mirrors |
-| [AVM Templates](./scaffold/avm-templates.md) | The seven pinned templates, their scopes, and their AVM lineage |
-| [Release Process](./release-process.md) | How four version strings bump in lockstep for v0.5.3 |
+| [AVM Templates](./scaffold/avm-templates.md) | The eight pinned templates, their scopes, and their AVM lineage |
+| [Release Process](./release-process.md) | How five version strings bump in lockstep |
 | [Testing Strategy](./testing.md) | Where the four new regression tests fit in the broader matrix |

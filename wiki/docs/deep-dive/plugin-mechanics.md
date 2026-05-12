@@ -25,8 +25,8 @@ flowchart TB
     subgraph Apm["apm.yml / plugin.json"]
         direction TB
         Meta["name, version,<br>description"]:::meta
-        Skills["skills: [discover, evaluate, plan, scaffold]"]:::reg
-        Prompts["prompts: [/slz-discover, /slz-evaluate, /slz-plan, /slz-scaffold, /slz-run]"]:::reg
+        Skills["skills: [discover, reconcile, evaluate, plan, scaffold]"]:::reg
+        Prompts["prompts: [/slz-discover, /slz-reconcile, /slz-evaluate, /slz-plan, /slz-scaffold, /slz-run]"]:::reg
         Agents["agents: [slz-readiness]"]:::reg
         Mcp["mcp_servers: [azure, sequential-thinking]"]:::reg
         HooksReg["hooks:<br>pre_tool_use, post_tool_use"]:::reg
@@ -52,33 +52,35 @@ flowchart TB
 
 APM (Agentic Plugin Manifest) is the **authoring** format used during development. `plugin.json` is the **published** format consumed by Copilot CLI users after `/plugin install`. They carry the same information and must stay in sync — [`scripts/release.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/release.py) bumps both in lockstep, and [`release.yml`](https://github.com/msucharda/slz-readiness/blob/main/.github/workflows/release.yml) cross-validates against the tag.
 
-Version is bumped in **four** places simultaneously:
+Version is bumped in **five** places simultaneously:
 
 | File | Field |
 |---|---|
-| `apm.yml` | `version: 0.4.0` (line 2) |
-| `.github/plugin/plugin.json` | `"version": "0.4.0"` |
-| `scripts/slz_readiness/__init__.py` | `__version__ = "0.4.0"` (line 7) |
-| `data/baseline/VERSIONS.json` | `pinned_at` timestamp + plugin version |
+| `apm.yml` | `version: 0.14.8` |
+| `.github/plugin/plugin.json` | `"version": "0.14.8"` |
+| `scripts/slz_readiness/__init__.py` | `__version__ = "0.14.8"` |
+| `data/baseline/VERSIONS.json` | plugin version |
+| `pyproject.toml` | project version |
 
 Any PR that hand-edits just one of these will fail `release.yml`.
 
 ## Agent definition
 
-[`.github/agents/slz-readiness.agent.md`](https://github.com/msucharda/slz-readiness/blob/main/.github/agents/slz-readiness.agent.md) declares the agent's identity and the 4-phase contract. The agent's system prompt is composed from:
+`.github/agents/slz-readiness.agent.md` declares the agent's identity and the pipeline contract. The agent's system prompt is composed from:
 
-1. The agent definition file (identity, persona, 4-phase overview)
+1. The agent definition file (identity, persona, pipeline overview)
 2. The instructions file (8 non-negotiable rules)
-3. Per-invocation skill context (one of Discover / Evaluate / Plan / Scaffold SKILL.md)
+3. Per-invocation skill context (one of Discover / Reconcile / Evaluate / Plan / Scaffold SKILL.md)
 
 The separation is intentional: persona + rules are static across all phases; skill contracts are per-invocation.
 
 ## Skills
 
-Each of the four phases has a skill under [`.github/skills/<phase>/SKILL.md`](https://github.com/msucharda/slz-readiness/tree/main/.github/skills):
+Each phase has a skill under [`.github/skills/<phase>/SKILL.md`](https://github.com/msucharda/slz-readiness/tree/main/.github/skills):
 
-- **`discover/SKILL.md`** — read-only discovery contract. Describes the 6 discoverer modules, the scope-confirmation requirement, the `findings.json` schema.
-- **`evaluate/SKILL.md`** — deterministic evaluation contract. Describes zero-LLM guarantee, sort order, the 5 matcher types.
+- **`discover/SKILL.md`** — read-only discovery contract. Describes the discoverer modules, the scope-confirmation requirement, the `findings.json` schema.
+- **`reconcile/SKILL.md`** — brownfield alias contract. Describes greenfield short-circuit, brownfield per-role gates, and `mg_alias.json`.
+- **`evaluate/SKILL.md`** — deterministic evaluation contract. Describes zero-LLM guarantee, sort order, and matcher dispatch.
 - **`plan/SKILL.md`** — LLM narration contract. Describes the citation guard, design-area grouping, the post-hook.
 - **`scaffold/SKILL.md`** — template-only emission contract. Describes `ALLOWED_TEMPLATES`, per-scope dedup, JSON-Schema validation.
 
@@ -94,7 +96,7 @@ Skills do **not** contain executable code — they're Markdown that the agent re
 
 ### The orchestrator prompt
 
-[`.github/prompts/slz-run.prompt.md`](https://github.com/msucharda/slz-readiness/blob/main/.github/prompts/slz-run.prompt.md) is **not a skill** — it's a prompt that sequences the four skills with pauses between phases. Important: there is no `.github/skills/run/SKILL.md`. If you see a reference to one, it's a documentation bug.
+`.github/prompts/slz-run.prompt.md` is **not a skill** — it's a prompt that sequences the phase skills with `ask_user` gates between phases. Important: there is no `.github/skills/run/SKILL.md`. If you see a reference to one, it's a documentation bug.
 
 ```mermaid
 sequenceDiagram
@@ -103,6 +105,7 @@ sequenceDiagram
     participant Host as Copilot CLI
     participant Orchestrator as slz-run prompt
     participant D as discover skill
+    participant R as reconcile skill
     participant E as evaluate skill
     participant P as plan skill
     participant S as scaffold skill
@@ -112,6 +115,10 @@ sequenceDiagram
     Orchestrator->>D: invoke discover
     D-->>Orchestrator: findings.json path
     Orchestrator->>User: Pause — review? (unless --no-pause)
+    User-->>Orchestrator: continue
+    Orchestrator->>R: invoke reconcile
+    R-->>Orchestrator: mg_alias.json path
+    Orchestrator->>User: Pause — review?
     User-->>Orchestrator: continue
     Orchestrator->>E: invoke evaluate
     E-->>Orchestrator: gaps.json path
@@ -144,13 +151,13 @@ Gating to specific phases means Discover and Evaluate cannot even pull in sequen
 Two Python scripts in [`hooks/`](https://github.com/msucharda/slz-readiness/tree/main/hooks):
 
 - **`pre_tool_use.py`** — verb allowlist enforcement (see [Hooks](/deep-dive/hooks)).
-- **`post_tool_use.py`** — citation guard for `plan.md` (see [Hooks](/deep-dive/hooks)).
+- **`post_tool_use.py`** — citation guard for `plan.md` and schema guard for `mg_alias.json` (see [Hooks](/deep-dive/hooks)).
 
 Both are plain Python, cross-platform, no dependencies. The Copilot CLI runtime shells out to them on every tool invocation and every tool output write respectively.
 
 ## Instructions file
 
-[`.github/instructions/slz-readiness.instructions.md`](https://github.com/msucharda/slz-readiness/blob/main/.github/instructions/slz-readiness.instructions.md) documents the 8 non-negotiable rules (read-only, baseline-as-truth, determinism, citations, templates, HITL, scope confirmation, trace). These are included in the agent's system prompt at every turn.
+`.github/instructions/slz-readiness.instructions.md` documents the non-negotiable rules (read-only, baseline-as-truth, determinism, citations, templates, HITL, scope confirmation, trace). These are included in the agent's system prompt at every turn.
 
 Critically, the rules here are reinforced **mechanically** elsewhere:
 
@@ -170,4 +177,4 @@ The documentation is a contract with reviewers; the code is a contract with the 
 
 - [Hooks](/deep-dive/hooks) — the two hook scripts in detail.
 - [Orchestration](/deep-dive/orchestration) — the `/slz-run` prompt.
-- [Release Process](/deep-dive/release-process) — how the four version strings stay in sync.
+- [Release Process](/deep-dive/release-process) — how the version strings stay in sync.

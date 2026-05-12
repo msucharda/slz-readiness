@@ -1,15 +1,16 @@
-# Discoverers: The Six Modules
+# Discoverers: The Seven Modules
 
 ## At a glance
 
 | # | Module | Queries (az ...) | Emits kind |
 |---|---|---|---|
-| 1 | `subscription_inventory` | `account list`, `account show` | `subscription` |
-| 2 | `mg_hierarchy` | `account management-group list`, `show --expand` | `management_group` |
-| 3 | `policy_assignments` | `policy assignment list --scope ...` | `policy_assignment` |
-| 4 | `identity_rbac` | `role assignment list --scope ...` | `role_assignment` |
-| 5 | `logging_monitoring` | `monitor log-analytics workspace list` | `log_analytics_workspace` |
-| 6 | `sovereignty_controls` | Composite — policy_assignments at specific scopes | `sovereignty_baseline` |
+| 1 | `mg_hierarchy` | `account management-group list`, `show --expand` | `microsoft.management/managementgroups.*` |
+| 2 | `subscription_inventory` | `account list`, `account show` | `microsoft.resources/subscriptions` |
+| 3 | `policy_assignments` | `policy assignment list --scope ...` | `microsoft.authorization/policyassignments` |
+| 4 | `custom_initiatives` | `policy set-definition show/list` | custom initiative metadata |
+| 5 | `identity_rbac` | `role assignment list --scope ...` | `microsoft.authorization/roleassignments` |
+| 6 | `logging_monitoring` | `graph query` / workspace enumeration | `microsoft.operationalinsights/workspaces` |
+| 7 | `sovereignty_controls` | Composite — policy assignments at specific scopes | sovereignty policy evidence |
 
 All modules live under [`scripts/slz_readiness/discover/`](https://github.com/msucharda/slz-readiness/tree/main/scripts/slz_readiness/discover).
 
@@ -18,33 +19,23 @@ All modules live under [`scripts/slz_readiness/discover/`](https://github.com/ms
 Every discoverer exposes one function:
 
 ```python
-def discover(scope: RunScope) -> list[Finding]: ...
+def discover(...) -> list[Finding]: ...
 ```
 
-It reads from `scope` (tenant id + subscription ids), calls `az_common.run_az(...)` one or more times, and returns a `list[Finding]`. Errors become `error_finding`-kind Findings rather than exceptions.
+It reads the tenant/subscription scope, calls `az_common.run_az(...)` one or more times, and returns finding dictionaries with `resource_type`, `resource_id`, `scope`, `observed_state`, and `query_cmd`. Errors become explicit error findings rather than uncaught exceptions.
 
 ## Per-module breakdown
 
-### 1. Subscription inventory
+### 1. Management-group hierarchy
 
-```mermaid
-flowchart LR
-    S["scope.mode"]:::t -- filtered --> L1["az account show --subscription $id"]:::a
-    S -- all --> L2["az account list --refresh"]:::a
-    L1 --> P["one Finding per sub"]:::out
-    L2 --> P
-    classDef t fill:#2d333b,stroke:#30363d,color:#e6edf3;
-    classDef a fill:#161b22,stroke:#6d5dfc,color:#e6edf3;
-    classDef out fill:#1c2128,stroke:#3fb950,color:#e6edf3;
-```
-
-Runs first because every downstream discoverer needs a subscription id list. Cite: [`subscription_inventory.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/subscription_inventory.py).
-
-### 2. Management-group hierarchy
-
-Walks the tenant's MG tree. Uses `az account management-group list` + `show --expand --recurse` to build the parent/child graph. Emits one Finding per MG with `data.parent_id`, `data.children[]`, `data.subscriptions[]`. Cite: [`mg_hierarchy.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/mg_hierarchy.py).
+Walks the tenant's MG tree. Uses `az account management-group list` + `show --expand --recurse` to build the parent/child graph and emits the `managementgroups.summary` record that Reconcile validates aliases against. Cite: [`mg_hierarchy.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/mg_hierarchy.py).
 
 Feeds: `mg.slz.hierarchy_shape` rule, all `archetype.*` rules (which match on MG name).
+
+### 2. Subscription inventory
+
+Supplies the tenant-filtered subscription set used by subscription-scoped
+checks. Cite: [`subscription_inventory.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/subscription_inventory.py).
 
 ### 3. Policy assignments
 
@@ -54,23 +45,29 @@ Cite: [`policy_assignments.py`](https://github.com/msucharda/slz-readiness/blob/
 
 Feeds: `policy.*`, `sovereignty.*`, `archetype.*` rules.
 
-### 4. Identity RBAC
+### 4. Custom initiatives
+
+Collects custom initiative metadata so Evaluate can identify non-canonical
+policy-set wrappers around baseline assignments where supported. Cite:
+[`custom_initiatives.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/custom_initiatives.py).
+
+### 5. Identity RBAC
 
 Role assignments at tenant-root and per-MG scope. Filters by the built-in role ids the rules care about (Reader, Contributor, Owner, specific RBAC for Identity archetype).
 
 Cite: [`identity_rbac.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/identity_rbac.py).
 
-Feeds: `identity.slz.*`.
+Feeds: `identity.platform_identity_mg_exists`.
 
-### 5. Logging & monitoring
+### 6. Logging & monitoring
 
 Iterates subscriptions; `az monitor log-analytics workspace list --subscription <id>`. Emits one Finding per workspace with `data.location`, `data.sku`, `data.retention_in_days`.
 
 Cite: [`logging_monitoring.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/logging_monitoring.py).
 
-Feeds: `logging.slz.*` rules (including `any_subscription_has_workspace` matcher).
+Feeds: `logging.management_mg_exists` and `logging.management_la_workspace_exists`.
 
-### 6. Sovereignty controls
+### 7. Sovereignty controls
 
 Composite discoverer — does not itself make new `az` calls but **re-shapes** the outputs of `policy_assignments` at specific sovereignty-relevant scopes (tenant root and Confidential MG). Emits `sovereignty_baseline` findings whose `data.assignments[]` carries `policySetDefinitionId` values for matching.
 
@@ -83,7 +80,9 @@ Pinned policySetDefinitionIds for the sovereignty rules:
 
 Cite: [`sovereignty_controls.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/sovereignty_controls.py).
 
-Feeds: `sovereignty.slz.global_policies`, `sovereignty.slz.confidential_policies`.
+Feeds: `policy.slz.sovereign_root_policies_applied`,
+`sovereignty.confidential_corp_policies_applied`, and
+`sovereignty.confidential_online_policies_applied`.
 
 ## Finding → Rule fan-out
 
@@ -94,9 +93,10 @@ flowchart LR
         D1["subscription_inventory"]:::d
         D2["mg_hierarchy"]:::d
         D3["policy_assignments"]:::d
-        D4["identity_rbac"]:::d
-        D5["logging_monitoring"]:::d
-        D6["sovereignty_controls"]:::d
+        D4["custom_initiatives"]:::d
+        D5["identity_rbac"]:::d
+        D6["logging_monitoring"]:::d
+        D7["sovereignty_controls"]:::d
     end
 
     subgraph Rules["Rule design areas"]
@@ -106,16 +106,17 @@ flowchart LR
         R3["logging (2)"]:::r
         R4["policy (1)"]:::r
         R5["sovereignty (2)"]:::r
-        R6["archetype (8)"]:::r
+        R6["archetype (11)"]:::r
     end
 
     D2 --> R1
     D2 --> R6
-    D4 --> R2
-    D5 --> R3
+    D5 --> R2
+    D6 --> R3
     D3 --> R4
     D3 --> R6
-    D6 --> R5
+    D4 --> R6
+    D7 --> R5
 
     classDef d fill:#2d333b,stroke:#6d5dfc,color:#e6edf3;
     classDef r fill:#161b22,stroke:#30363d,color:#e6edf3;

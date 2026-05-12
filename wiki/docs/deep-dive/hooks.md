@@ -5,9 +5,9 @@
 | Hook | File | Runs | Purpose |
 |---|---|---|---|
 | Pre-tool-use | [`hooks/pre_tool_use.py`](https://github.com/msucharda/slz-readiness/blob/main/hooks/pre_tool_use.py) | Before every tool invocation | Allow-list Azure CLI verbs; deny writes |
-| Post-tool-use | [`hooks/post_tool_use.py`](https://github.com/msucharda/slz-readiness/blob/main/hooks/post_tool_use.py) | After plan-phase tool output | Strip plan bullets without rule citations |
+| Post-tool-use | [`hooks/post_tool_use.py`](https://github.com/msucharda/slz-readiness/blob/main/hooks/post_tool_use.py) | After plan/reconcile artifact writes | Strip plan bullets without rule citations; repair invalid `mg_alias.json` entries |
 
-Both scripts are standalone Python files with **zero runtime dependencies**. Cross-platform. Copilot CLI shells out to them; they read JSON from stdin and write a verdict to stdout.
+Both scripts are standalone Python files with **zero runtime dependencies**. Cross-platform. Copilot CLI shells out to them; they read JSON from stdin and write a verdict to stdout/stderr.
 
 ## Pre-tool-use: the verb allowlist
 
@@ -18,12 +18,13 @@ From [`hooks/pre_tool_use.py:21-33`](https://github.com/msucharda/slz-readiness/
 ```python
 AZURE_TOOL_RE = re.compile(r"^\s*(az|azd|bicep)\b", re.IGNORECASE)
 ALLOW_RE = re.compile(
-    r"\b(list|show|get|query|search|describe|export|version|account)\b",
-    re.IGNORECASE,
+    r"(^|\s)(list|show|get|query|search|list-.*|show-.*|export|validate|what-if|"
+    r"check|whoami|account|version|summarize|preview|download|"
+    r"effective-permissions|graph)(\s|$)"
 )
 DENY_RE = re.compile(
-    r"\b(create|delete|set|update|apply|deploy|assign|invoke|new|put|patch)\b",
-    re.IGNORECASE,
+    r"(^|\s)(create|delete|set|update|apply|deploy|start|stop|restart|add|remove|"
+    r"import|upload|grant|revoke|reset|purge|assign|invoke|new|put|patch)(\s|$)"
 )
 ```
 
@@ -61,6 +62,8 @@ Important defaults:
 - **Non-Azure commands pass through.** `ls`, `cat`, `pytest`, etc. — not the hook's business.
 - **Ambiguous Azure commands are blocked.** If neither ALLOW_RE nor DENY_RE matches (e.g. the LLM produced a weirdly phrased verb), the hook fails closed.
 - **DENY takes precedence over ALLOW.** An `az policy list-assignment delete` (contrived) would match both; deny wins.
+- **Raw Azure HTTP writes are blocked.** The hook also denies `az rest`, `curl`, `Invoke-RestMethod`, and related tools when they target Azure control-plane hosts with write HTTP methods.
+- **Generated deploy runbooks are blocked.** Agent attempts to run `deploy-all.{ps1,sh}` or `grant-dine-roles.{ps1,sh}` are denied even when the script defaults to what-if.
 
 ### Test coverage
 
@@ -81,26 +84,19 @@ Important defaults:
 
 Any new verb added to either regex must come with a new test case.
 
-## Post-tool-use: the citation guard
+## Post-tool-use: citation and alias guards
 
 ### Regexes
 
-From [`hooks/post_tool_use.py:21-22`](https://github.com/msucharda/slz-readiness/blob/main/hooks/post_tool_use.py#L21-L22) — **the real code, as of v0.5.4**:
+From [`hooks/post_tool_use.py:36-37`](https://github.com/msucharda/slz-readiness/blob/main/hooks/post_tool_use.py#L36-L37):
 
 ```python
 BULLET_RE = re.compile(r"^\s*[-*]\s+")
 CITE_RE   = re.compile(r"\(rule_id:\s*([A-Za-z0-9_.-]+)\)")   # ⚠ parens only
 ```
 
-::: warning Known drift (v0.5.4) — C-1
-The `CITE_RE` above requires **parentheses** `(rule_id: X)`. The plan skill instructs the LLM to emit **square brackets** `[rule_id: X]` — see [`.github/skills/plan/SKILL.md:19-20`](https://github.com/msucharda/slz-readiness/blob/main/.github/skills/plan/SKILL.md#L19-L20) and every documented example in this wiki. As written, an LLM that follows its own instructions will have **every plan bullet dropped**. The safer fix is to widen the regex:
-
-```python
-CITE_RE = re.compile(r"[(\[]rule_id:\s*([A-Za-z0-9_.-]+)[)\]]")
-```
-
-See [Agent Surface → Known drift & failure modes](./agent-surface.md#known-drift-failure-modes) for the full writeup (C-1 through C-6) and the missing golden test.
-:::
+The current guard accepts the parenthesized form `(rule_id: X)`. Square-bracket
+examples are stale unless the hook is widened in code.
 
 ### Decision logic
 
@@ -137,15 +133,23 @@ It's not enough that a bullet *looks* cited — the citation must reference a ru
 
 | Bullet | Fate |
 |---|---|
-| `- [rule_id: mg.slz.hierarchy_shape] The tenant MG tree is missing …` | Keep |
+| `- (rule_id: mg.slz.hierarchy_shape) The tenant MG tree is missing ...` | Keep |
 | `- The tenant MG tree is missing …` | Drop (no rule_id) |
-| `- [rule_id: invented.rule_name] …` | Drop (rule id not in known set) |
-| `- [rule: mg.slz.hierarchy_shape] …` | Drop (wrong marker — must be `rule_id:`) |
-| Nested `- - [rule_id: X] ...` (sub-bullet) | Depends on parent — see below |
+| `- (rule_id: invented.rule_name) ...` | Drop (rule id not in known set) |
+| `- [rule_id: mg.slz.hierarchy_shape] ...` | Drop (wrong delimiter for current hook) |
+| `- (rule: mg.slz.hierarchy_shape) ...` | Drop (wrong marker — must be `rule_id:`) |
+| Nested `- - (rule_id: X) ...` (sub-bullet) | Depends on parent — see below |
 
 ### Nested bullets
 
 The BULLET_RE matches any `-` prefixed line regardless of indent. Sub-bullets inherit no context, so they must also carry a citation **or be an obvious continuation line** (`  continued text` without a leading dash). The model is coached in the plan skill to keep reasoning flat.
+
+## Alias repair guard
+
+When the target path is `mg_alias.json`, the post hook repairs direct writes
+that bypassed the Reconcile CLI. It drops unknown role keys, nulls non-string
+values, nulls duplicate MG mappings, and nulls aliases absent from sibling
+`findings.json` `present_ids`. Repairs are written to `mg_alias.dropped.md`.
 
 ## Edge cases
 
@@ -171,7 +175,7 @@ target = Path(data.get("output_path") or data.get("path"))
 | Hook | Per-invocation cost | Notes |
 |---|---|---|
 | `pre_tool_use.py` | < 5 ms | Two regex tests + write verdict |
-| `post_tool_use.py` | < 50 ms | Walks ~14 YAMLs, splits markdown, rewrites |
+| `post_tool_use.py` | < 50 ms | Walks rule YAMLs, splits markdown, rewrites plan/alias files |
 
 Neither is a bottleneck.
 
@@ -179,7 +183,7 @@ Neither is a bottleneck.
 
 Both scripts use stdlib only:
 
-- `re`, `json`, `sys`, `pathlib`, `yaml` (pyyaml).
+- `re`, `json`, `sys`, `pathlib`, `collections`.
 - No `subprocess`, no path quoting subtleties, no OS-specific paths.
 - Tested on Linux / macOS / Windows in CI.
 

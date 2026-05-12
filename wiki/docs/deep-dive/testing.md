@@ -55,7 +55,7 @@ The pyramid is deliberately heavy at the top (unit) and narrow near production (
 This is the test that pays the most rent. [`test_evaluate_golden.py`](https://github.com/msucharda/slz-readiness/blob/main/tests/unit/test_evaluate_golden.py):
 
 1. Loads a committed `tests/fixtures/findings.json`.
-2. Loads all 14 rules from `scripts/evaluate/rules/`.
+2. Loads all 18 rules from `scripts/evaluate/rules/`.
 3. Runs `engine.evaluate_all(findings, rules)`.
 4. Compares the result byte-for-byte against `tests/fixtures/gaps.json`.
 

@@ -6,10 +6,11 @@ A Copilot plugin that helps Azure customers check their landing zone against the
 
 ## How it works
 
-Four phases, each one small and verifiable on its own:
+Five phases, each one small and verifiable on its own:
 
 ```
 Discover   → read-only az / Azure MCP queries          → artifacts/<run>/findings.json
+Reconcile  → operator-confirmed MG role aliases        → artifacts/<run>/mg_alias.json
 Evaluate   → pure Python rule engine (NO LLM)          → artifacts/<run>/gaps.json
 Plan       → LLM + sequential-thinking, cites rule ids → artifacts/<run>/plan.md
 Scaffold   → AVM templates filled with params (no free-form) → artifacts/<run>/bicep/
@@ -26,7 +27,7 @@ copilot
 /plugin install msucharda/slz-readiness
 ```
 
-Copilot fetches the repo, reads `.github/plugin/plugin.json`, and registers the agent, skills, slash commands, hooks, and MCP servers. The five slash commands (`/slz-discover`, `/slz-evaluate`, `/slz-plan`, `/slz-scaffold`, `/slz-run`) appear in the `/` menu.
+Copilot fetches the repo, reads `.github/plugin/plugin.json`, and registers the agent, skills, slash commands, hooks, and MCP servers. The six slash commands (`/slz-discover`, `/slz-reconcile`, `/slz-evaluate`, `/slz-plan`, `/slz-scaffold`, `/slz-run`) appear in the `/` menu.
 
 **Requirements (all platforms):** Python 3.11+, `az` CLI (logged in), `git`. No `pip install` is needed for normal use — the skills invoke the engine via `python -m slz_readiness.<phase>.cli`. Works on Windows, macOS and Linux without WSL.
 
@@ -66,9 +67,10 @@ Download `slz-readiness-vX.Y.Z.zip` from [Releases](./releases), unzip it somewh
 ```
 /slz-run            # end-to-end, pauses for approval between phases (default)
 /slz-discover       # phase 1 only
-/slz-evaluate       # phase 2 only (deterministic)
-/slz-plan           # phase 3 only
-/slz-scaffold       # phase 4 only
+/slz-reconcile      # phase 2 only (brownfield MG alias mapping)
+/slz-evaluate       # phase 3 only (deterministic)
+/slz-plan           # phase 4 only
+/slz-scaffold       # phase 5 only
 ```
 
 ## Anti-hallucination contract
@@ -77,13 +79,13 @@ Every claim the plugin makes is backed by a rule YAML that cites a specific file
 
 ## Releasing (maintainers)
 
-Version strings live in four files (`apm.yml`, `.github/plugin/plugin.json`, `scripts/slz_readiness/__init__.py`, `data/baseline/VERSIONS.json`). Use the release script — do not bump by hand:
+Version strings live in five files (`apm.yml`, `.github/plugin/plugin.json`, `scripts/slz_readiness/__init__.py`, `data/baseline/VERSIONS.json`, `pyproject.toml`). Use the release script — do not bump by hand:
 
 ```bash
-python scripts/release.py 0.3.0 --changelog "short summary"
+python scripts/release.py 0.14.9
 ```
 
-The script bumps all four files, commits, tags `vX.Y.Z`, and pushes. The `release.yml` workflow verifies that the tag matches every manifest version and refuses to publish on mismatch, then builds and attaches `slz-readiness-vX.Y.Z.zip` to the GitHub Release.
+The script bumps all five files. The `release.yml` workflow verifies that the tag matches every manifest version and refuses to publish on mismatch, then builds and attaches `slz-readiness-vX.Y.Z.zip` to the GitHub Release.
 
 Consumers install with `/plugin install msucharda/slz-readiness` inside the Copilot CLI (not `apm install` — APM expects a `.apm/` tree this plugin does not ship).
 

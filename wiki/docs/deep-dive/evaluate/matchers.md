@@ -6,29 +6,32 @@
 |---|---|---|
 | `equals` | Exact value match on one field | `mg.slz.hierarchy_shape` |
 | `contains_all` | Observed set ⊇ required set | Role-assignment lists |
-| `policy_assignments_include` | A specific policySetDefinitionId is present in any assignment | `sovereignty.slz.global_policies` |
-| `archetype_policies_applied` | All expected policies for a named archetype are applied | `archetype.*.policies` |
-| `any_subscription_has_workspace` | At least one subscription in scope has a Log Analytics workspace | `logging.slz.workspace_exists` |
+| `policy_assignments_include` | Required policy assignment names are present | legacy / generic policy assignment checks |
+| `archetype_policies_applied` | All expected policies for a named archetype are applied, with definition-id fallback | `archetype.*_policies_applied` |
+| `any_subscription_has_workspace` | At least one subscription in scope has a Log Analytics workspace | `logging.management_la_workspace_exists` |
+| `policy_parameters_match` | Assigned policy parameters match baseline where auto-comparison is safe | `archetype.*_policy_parameters_match` |
+| `custom_initiative_equivalent` | Custom initiative contents match the baseline definition-id set | custom initiative drift rules |
 
-Source: [`matchers.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/matchers.py), registry at [`matchers.py:98`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/matchers.py#L98).
+Source: [`matchers.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/matchers.py), registry at [`matchers.py:396`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/matchers.py#L396).
 
 ## Signature
 
 Every matcher conforms to one type:
 
 ```python
-Matcher = Callable[[MatcherSpec, list[Finding]], tuple[bool, dict]]
+Matcher = Callable[[Any, Any, dict[str, Any]], tuple[bool, Any] | tuple[bool, Any, str | None]]
 ```
 
-- `spec` — the `matcher:` block from the rule YAML (arbitrary dict with a `kind` discriminator).
-- `findings` — the in-scope subset.
+- `observed` — the selected finding payload(s) from `findings.json`.
+- `expected` — the rule's expected value.
+- `spec` — the `matcher:` block from the rule YAML (with a `type` discriminator).
 - Return `(ok, observed)`:
   - `ok = True` — rule passes, `observed` is informational.
   - `ok = False` — rule fails, `observed` is the evidence written into the Gap.
 
 ## The MATCHERS registry
 
-[`matchers.py:98`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/matchers.py#L98):
+[`matchers.py:396`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/matchers.py#L396):
 
 ```python
 MATCHERS: dict[str, Matcher] = {
@@ -37,6 +40,8 @@ MATCHERS: dict[str, Matcher] = {
     "policy_assignments_include": _policy_assignments_include,
     "archetype_policies_applied": _archetype_policies_applied,
     "any_subscription_has_workspace": _any_subscription_has_workspace,
+    "policy_parameters_match": _policy_parameters_match,
+    "custom_initiative_equivalent": _custom_initiative_equivalent,
 }
 ```
 
@@ -104,27 +109,26 @@ Passes when `findings[].field` (treated as a set) is a superset of `values`. Mis
 
 ```yaml
 matcher:
-  kind: policy_assignments_include
-  policy_set_definition_id: c1cbff38-87c0-4b9f-9f70-035c7a3b5523
+  type: policy_assignments_include
 ```
 
-Walks `policy_assignment` findings in scope and passes if **any** has matching `policySetDefinitionId`. `observed` lists the scope searched and the assignment count.
+Walks policy-assignment findings in scope and passes when all expected assignment names are present. `observed` lists present and missing assignment names.
 
 ### `archetype_policies_applied`
 
 ```yaml
 matcher:
-  kind: archetype_policies_applied
-  archetype: alz_corp
+  type: archetype_policies_applied
+  archetype_ref:
+    path: platform/alz/archetype_definitions/corp.alz_archetype_definition.json
 ```
 
 Cross-references:
 
-- `management_group` findings whose name/tag marks it as the given archetype.
-- `policy_assignment` findings at that MG's scope.
+- selected policy-assignment findings at that MG's scope.
 - The baseline policy list for that archetype (loaded from the pinned ALZ Library).
 
-Passes when the in-scope MGs all carry the expected policy assignment set. `observed` names the MG and missing policy ids.
+Passes when the in-scope MG carries the expected policy assignment set. `observed` lists required, present, missing, and `matched_by_defid` assignments.
 
 ### `any_subscription_has_workspace`
 
@@ -136,7 +140,7 @@ matcher:
 
 Aggregate-style: passes when **any** `log_analytics_workspace` finding in scope has `data.retention_in_days >= 30`. `observed` lists the workspaces inspected and their retention values.
 
-## Why only five
+## Why a small closed set
 
 ```mermaid
 flowchart LR
@@ -151,13 +155,15 @@ flowchart LR
         Q5["At least one workspace present?"]:::q
     end
 
-    subgraph Matchers["Five matchers"]
+    subgraph Matchers["Closed matcher set"]
         direction TB
         M1["equals"]:::m
         M2["contains_all"]:::m
         M3["policy_assignments_include"]:::m
         M4["archetype_policies_applied"]:::m
         M5["any_subscription_has_workspace"]:::m
+        M6["policy_parameters_match"]:::m
+        M7["custom_initiative_equivalent"]:::m
     end
 
     Q1 --> M1
@@ -173,7 +179,7 @@ flowchart LR
     classDef m fill:#1c2128,stroke:#3fb950,color:#e6edf3;
 ```
 
-The five matchers cover every question the 14 rules ask. Adding an unconstrained "custom JSON path + operator" matcher would explode the surface area for hallucination and would force rule authors to learn JSONPath semantics. The five-kind ceiling is a product choice.
+The closed matcher set covers every question the current rules ask. Adding an unconstrained "custom JSON path + operator" matcher would explode the surface area for hallucination and would force rule authors to learn JSONPath semantics.
 
 ## Observed payload conventions
 
@@ -184,8 +190,10 @@ Each matcher returns `observed` with a small, documented shape so the Plan phase
 | `equals` | `expected`, `actual`, `field` |
 | `contains_all` | `required`, `present`, `missing` |
 | `policy_assignments_include` | `scope`, `expected_id`, `assignments_seen` |
-| `archetype_policies_applied` | `archetype`, `mg_id`, `missing_policy_ids` |
-| `any_subscription_has_workspace` | `subscriptions_scanned`, `workspaces`, `threshold` |
+| `archetype_policies_applied` | `required`, `present`, `missing`, `matched_by_defid` |
+| `any_subscription_has_workspace` | `workspace_count`, `workspaces_sample` |
+| `policy_parameters_match` | `drifted_assignments` |
+| `custom_initiative_equivalent` | `drifted_initiatives` |
 
 The Plan prompt reads these shapes when composing remediation bullets.
 

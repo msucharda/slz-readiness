@@ -12,7 +12,7 @@ outline: deep
 |---|---|---|
 | Introduced in | `v0.5.0` | [apm.yml](https://github.com/msucharda/slz-readiness/blob/main/apm.yml) |
 | Shared module | `scripts/slz_readiness/_summary.py` | [`_summary.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/_summary.py) |
-| Emitters | Discover, Evaluate, Plan, Scaffold | all 4 phase CLIs |
+| Emitters | Discover, Reconcile, Evaluate, Plan, Scaffold | phase CLIs |
 | Output pairs | `<phase>.summary.json` (machine) + `<phase>.summary.md` (human) | one per phase |
 | Roll-up | `run.summary.md` (concatenation) | written by Scaffold |
 | Determinism | Zero LLM, zero network, stable sort keys | [`_summary.py:38-80`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/_summary.py#L38-L80) |
@@ -22,7 +22,7 @@ Phase summaries are the project's answer to a narrow but persistent problem: the
 
 ## Why this exists
 
-The four original artifacts (`findings.json`, `gaps.json`, `plan.md`, `bicep/*.bicep`) are either machine-readable or LLM-narrated. Neither is ideal for a human quickly asking _"what did this run actually find?"_ — `findings.json` is too raw, `plan.md` is citation-filtered prose.
+The primary artifacts (`findings.json`, `mg_alias.json`, `gaps.json`, `plan.md`, `bicep/*.bicep`) are either machine-readable or LLM-narrated. Neither is ideal for a human quickly asking _"what did this run actually find?"_ — `findings.json` is too raw, `plan.md` is citation-filtered prose.
 
 Phase summaries close that gap without violating any of the repo's invariants:
 
@@ -54,11 +54,12 @@ flowchart LR
 
 The critical subtlety: the plan summary is filename‑engineered to dodge the citation guard. The post‑tool‑use hook matches `endswith("plan.md")`, so `plan.summary.md` is intentionally out of scope — locked in by [`tests/test_hooks.py:95-97`](https://github.com/msucharda/slz-readiness/blob/main/tests/test_hooks.py#L95-L97).
 
-## The four phase summaries at a glance
+## The phase summaries at a glance
 
 | Phase | Writer | JSON shape | Markdown content | Source |
 |---|---|---|---|---|
 | **Discover** | `slz-discover` CLI | per-module status, error tallies, scope banner | module table, top observations, caveats (timeouts, perms) | [`discover/cli.py:345-444`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/cli.py#L345-L444) |
+| **Reconcile** | `slz-reconcile` CLI | mode, mapped/unmapped counts, mapping table | greenfield/brownfield mode, roles mapped/unmapped, target MG table | [`reconcile/cli.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/reconcile/cli.py) |
 | **Evaluate** | `slz-evaluate` via `engine.py` | tally of `rules_evaluated/passed/failed/unknown`, severity + area + status rollups, compliance ratio | totals by severity/area/status, top-N largest gaps, unknown-gap block | [`evaluate/engine.py:51-237`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/engine.py#L51-L237) |
 | **Plan** | `slz-plan-summary` (separate console script) | foundation-rule readiness map, design-area grouping, severity tally, unknown gaps | readiness snapshot, foundation table, order of operations, discovery blind spots | [`plan/summary_cli.py:1-236`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/plan/summary_cli.py) |
 | **Scaffold** | `slz-scaffold` CLI | emitted templates, warnings, un-scaffolded gaps, per-template `what-if` + `create` commands | what was emitted, what was skipped, dependency-ordered deploy commands | [`scaffold/cli.py:380-427`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/scaffold/cli.py#L380-L427) |
@@ -72,6 +73,7 @@ sequenceDiagram
     autonumber
     actor Op as Operator
     participant D as slz-discover
+    participant R as slz-reconcile
     participant E as slz-evaluate
     participant PS as slz-plan-summary
     participant P as slz-plan (LLM)
@@ -81,6 +83,9 @@ sequenceDiagram
     Op->>D: --tenant --all-subscriptions
     D->>FS: findings.json
     D->>FS: discover.summary.{json,md}
+    Op->>R: --mode greenfield|brownfield
+    R->>FS: mg_alias.json
+    R->>FS: reconcile.summary.{json,md}
     Op->>E: --findings findings.json
     E->>FS: gaps.json
     E->>FS: evaluate.summary.{json,md}
@@ -92,7 +97,7 @@ sequenceDiagram
     Op->>S: --gaps gaps.json
     S->>FS: bicep/*.bicep + params/
     S->>FS: scaffold.summary.{json,md}
-    S->>FS: run.summary.md (roll-up of all 4)
+    S->>FS: run.summary.md (roll-up of present summaries)
 ```
 
 <!-- Sources: scripts/slz_readiness/discover/cli.py:255-270, scripts/slz_readiness/evaluate/engine.py:198-220, scripts/slz_readiness/plan/summary_cli.py, scripts/slz_readiness/scaffold/cli.py:430-466 -->
@@ -101,7 +106,7 @@ sequenceDiagram
 
 ## The shared primitive: `_summary.py`
 
-Four separate phase CLIs write summaries, but the tally logic, table renderer, and header block are centralised so all four files look identical in structure. This isn't just DRY — it's **determinism insurance**: a single place to enforce ASCII, canonical severity order, and stable sort keys.
+Phase CLIs write summaries, but the tally logic, table renderer, and header block are centralised so the files look identical in structure. This isn't just DRY — it's **determinism insurance**: a single place to enforce ASCII, canonical severity order, and stable sort keys.
 
 ```mermaid
 classDiagram
@@ -214,13 +219,18 @@ After Scaffold completes, `_write_run_rollup` concatenates any phase summaries p
 ```
 # SLZ Run summary
 
-_run=20260417T171608Z | phases=Discover,Evaluate,Plan,Scaffold | ts=...Z_
+_run=20260417T171608Z | phases=Discover,Reconcile,Evaluate,Plan,Scaffold | ts=...Z_
 
 ---
 <!-- source: discover.summary.md -->
 # SLZ Discover summary ...
 
 ---
+<!-- source: reconcile.summary.md -->
+# SLZ Reconcile summary ...
+
+---
+ 
 <!-- source: evaluate.summary.md -->
 # SLZ Evaluate summary ...
 
@@ -266,7 +276,7 @@ Only the `ts=` field in the header block varies between runs — everything else
 | Test file | What it pins | Source |
 |---|---|---|
 | `tests/unit/test_summary_helpers.py` | tally order, ASCII glyphs, JSON key sort, table rendering | [test_summary_helpers.py](https://github.com/msucharda/slz-readiness/blob/main/tests/unit/test_summary_helpers.py) |
-| `tests/unit/test_phase_summaries.py` | end-to-end emit for each of the four phases | [test_phase_summaries.py](https://github.com/msucharda/slz-readiness/blob/main/tests/unit/test_phase_summaries.py) |
+| `tests/unit/test_phase_summaries.py` | end-to-end emit for phase summaries | [test_phase_summaries.py](https://github.com/msucharda/slz-readiness/blob/main/tests/unit/test_phase_summaries.py) |
 | `tests/test_hooks.py::test_plan_summary_not_filtered` | `plan.summary.md` bypasses the citation guard | [test_hooks.py:95-120](https://github.com/msucharda/slz-readiness/blob/main/tests/test_hooks.py#L95-L120) |
 
 The hook test is the load-bearing one: if someone renames `plan.summary.md` back toward `plan.md`, or loosens the guard's suffix match, determinism protection around numbers silently evaporates. The test encodes that contract.
@@ -301,7 +311,7 @@ def _tally_bump(tally_out: dict[str, Any] | None, *, passed: bool, status: str) 
 | Page | Why it's relevant |
 |---|---|
 | [Artifacts & Outputs](../getting-started/artifacts.md) | Lists all summary files alongside the primary artifacts |
-| [Architecture Overview](./architecture.md) | Positions summaries in the four-phase pipeline |
+| [Architecture Overview](/deep-dive/architecture) | Positions summaries in the pipeline |
 | [Hooks](./hooks.md) | Explains the `post_tool_use.py` citation guard that `plan.summary.md` deliberately bypasses |
 | [Discover CLI & Scope](./discover/cli-and-scope.md) | Source of `discover.summary.{json,md}` — also covers scope validation |
 | [Rule Engine](./evaluate/rule-engine.md) | Source of `evaluate.summary.{json,md}` — engine tally contract |

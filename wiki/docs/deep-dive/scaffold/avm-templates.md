@@ -10,6 +10,7 @@ Policy-assigning templates now accept a `rolloutPhase` parameter (`audit` / `enf
 |---|---|---|---|
 | `management-groups` | tenant root | — | Create/align MG hierarchy |
 | `policy-assignment` | MG | various | Generic single-policy assignment |
+| `alz-policy-definitions` | SLZ root MG | ALZ custom definitions | Publish ALZ policy definitions and policy set definitions before assignment |
 | `sovereignty-global-policies` | tenant root | `c1cbff38-87c0-4b9f-9f70-035c7a3b5523` | Pinned SLZ Global set |
 | `sovereignty-confidential-policies` | Confidential MG | `03de05a4-c324-4ccd-882f-a814ea8ab9ea` | Pinned SLZ Confidential set |
 | `archetype-policies` | any archetype MG | — (composed) | Bulk-assign archetype's policy bundle |
@@ -18,9 +19,9 @@ Policy-assigning templates now accept a `rolloutPhase` parameter (`audit` / `enf
 
 All under [`scripts/scaffold/avm_templates/`](https://github.com/msucharda/slz-readiness/tree/main/scripts/scaffold/avm_templates). Allowlist at [`template_registry.py:48`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/scaffold/template_registry.py#L48).
 
-## Why only seven
+## Why only eight
 
-Every template maps to a **generalisable** shape — a kind of thing SLZ requires, not a specific instance. The 14 rules map to these 7 templates via `RULE_TO_TEMPLATE`. Many archetypes share the `archetype-policies` template because the shape is identical; only the policy bundle changes.
+Every template maps to a **generalisable** shape — a kind of thing SLZ requires, not a specific instance. The 18 rules map to these templates via `RULE_TO_TEMPLATE`, with informational drift rules intentionally not scaffolded. Many archetypes share the `archetype-policies` template because the shape is identical; only the policy bundle changes.
 
 Adding a template requires editing two Python files and adding a schema; adding a rule that reuses an existing template is a YAML-only change. This is deliberate economics — most growth should be rule-only.
 
@@ -31,11 +32,12 @@ flowchart LR
     subgraph Local["scripts/scaffold/avm_templates/"]
         T1["management-groups.bicep"]:::t
         T2["policy-assignment.bicep"]:::t
-        T3["sovereignty-global-policies.bicep"]:::t
-        T4["sovereignty-confidential-policies.bicep"]:::t
-        T5["archetype-policies.bicep"]:::t
-        T6["log-analytics.bicep"]:::t
-        T7["role-assignment.bicep"]:::t
+        T3["alz-policy-definitions.bicep"]:::t
+        T4["sovereignty-global-policies.bicep"]:::t
+        T5["sovereignty-confidential-policies.bicep"]:::t
+        T6["archetype-policies.bicep"]:::t
+        T7["log-analytics.bicep"]:::t
+        T8["role-assignment.bicep"]:::t
     end
 
     subgraph AVM["br/public: avm/res/..."]
@@ -50,8 +52,9 @@ flowchart LR
     T3 --> M2
     T4 --> M2
     T5 --> M2
-    T6 --> M3
-    T7 --> M4
+    T6 --> M2
+    T7 --> M3
+    T8 --> M4
 
     classDef t fill:#161b22,stroke:#6d5dfc,color:#e6edf3;
     classDef m fill:#2d333b,stroke:#3fb950,color:#e6edf3;

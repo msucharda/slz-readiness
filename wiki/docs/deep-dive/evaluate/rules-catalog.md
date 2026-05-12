@@ -4,39 +4,42 @@
 
 | Attribute | Value |
 |---|---|
-| Rule count | 14 |
+| Rule count | 18 |
 | Design areas | 6 (mg · identity · logging · policy · sovereignty · archetype) |
 | Rule format | YAML — one file per rule |
 | Location | [`scripts/evaluate/rules/**/*.yml`](https://github.com/msucharda/slz-readiness/tree/main/scripts/evaluate/rules) |
 | Loader | [`loaders.load_all_rules()`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/loaders.py#L83) |
 | Rule model | [`loaders.Rule`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/loaders.py#L20) |
 
-## The 14 rules
+## The 18 rules
 
 | Rule ID | Design area | Severity | Matcher | Scaffold template |
 |---|---|---|---|---|
-| `mg.slz.hierarchy_shape` | mg | high | `equals` | `management-groups` |
-| `identity.slz.privileged_roles` | identity | high | `contains_all` | `role-assignment` |
-| `logging.slz.workspace_exists` | logging | medium | `any_subscription_has_workspace` | `log-analytics` |
-| `logging.slz.diagnostic_settings` | logging | medium | `contains_all` | `log-analytics` |
-| `policy.slz.assignments_shape` | policy | medium | `policy_assignments_include` | `policy-assignment` |
-| `sovereignty.slz.global_policies` | sovereignty | high | `policy_assignments_include` | `sovereignty-global-policies` |
-| `sovereignty.slz.confidential_policies` | sovereignty | high | `policy_assignments_include` | `sovereignty-confidential-policies` |
-| `archetype.alz_connectivity.policies` | archetype | medium | `archetype_policies_applied` | `archetype-policies` |
-| `archetype.alz_corp.policies` | archetype | medium | `archetype_policies_applied` | `archetype-policies` |
-| `archetype.alz_decommissioned.policies` | archetype | low | `archetype_policies_applied` | `archetype-policies` |
-| `archetype.alz_identity.policies` | archetype | high | `archetype_policies_applied` | `archetype-policies` |
-| `archetype.alz_landing_zones.policies` | archetype | medium | `archetype_policies_applied` | `archetype-policies` |
-| `archetype.alz_platform.policies` | archetype | high | `archetype_policies_applied` | `archetype-policies` |
-| `archetype.alz_sandbox.policies` | archetype | low | `archetype_policies_applied` | `archetype-policies` |
-| `archetype.slz_public.policies` | archetype | medium | `archetype_policies_applied` | `archetype-policies` |
+| `archetype.alz_connectivity_policies_applied` | archetype | high | `archetype_policies_applied` | `archetype-policies` |
+| `archetype.alz_corp_policies_applied` | archetype | high | `archetype_policies_applied` | `archetype-policies` |
+| `archetype.alz_corp_policy_parameters_match` | archetype | medium | `policy_parameters_match` | informational |
+| `archetype.alz_decommissioned_policies_applied` | archetype | medium | `archetype_policies_applied` | `archetype-policies` |
+| `archetype.alz_identity_policies_applied` | archetype | high | `archetype_policies_applied` | `archetype-policies` |
+| `archetype.alz_landing_zones_policies_applied` | archetype | high | `archetype_policies_applied` | `archetype-policies` |
+| `archetype.alz_landing_zones_policy_parameters_match` | archetype | medium | `policy_parameters_match` | informational |
+| `archetype.alz_platform_policies_applied` | archetype | high | `archetype_policies_applied` | `archetype-policies` |
+| `archetype.alz_platform_policy_parameters_match` | archetype | medium | `policy_parameters_match` | informational |
+| `archetype.alz_sandbox_policies_applied` | archetype | medium | `archetype_policies_applied` | `archetype-policies` |
+| `archetype.slz_public_policies_applied` | archetype | high | `archetype_policies_applied` | `archetype-policies` |
+| `identity.platform_identity_mg_exists` | identity | high | `contains_all` | `management-groups` |
+| `logging.management_la_workspace_exists` | logging | high | `any_subscription_has_workspace` | `log-analytics` |
+| `logging.management_mg_exists` | logging | high | `contains_all` | `management-groups` |
+| `mg.slz.hierarchy_shape` | mg | high | `contains_all` | `management-groups` |
+| `policy.slz.sovereign_root_policies_applied` | policy | critical | `archetype_policies_applied` | `sovereignty-global-policies` |
+| `sovereignty.confidential_corp_policies_applied` | sovereignty | critical | `archetype_policies_applied` | `sovereignty-confidential-policies` |
+| `sovereignty.confidential_online_policies_applied` | sovereignty | critical | `archetype_policies_applied` | `sovereignty-confidential-policies` |
 
 Cite: [`scripts/evaluate/rules/`](https://github.com/msucharda/slz-readiness/tree/main/scripts/evaluate/rules), [`template_registry.py:21`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/scaffold/template_registry.py#L21) (`RULE_TO_TEMPLATE`).
 
 ## Rule YAML anatomy
 
 ```yaml
-rule_id: sovereignty.slz.global_policies
+rule_id: policy.slz.sovereign_root_policies_applied
 design_area: sovereignty
 severity: high
 
@@ -46,17 +49,17 @@ target:
   finding_kinds: [policy_assignment]
 
 matcher:
-  kind: policy_assignments_include
-  policy_set_definition_id: c1cbff38-87c0-4b9f-9f70-035c7a3b5523
+  type: archetype_policies_applied
+  selector:
+    resource_type: microsoft.authorization/policyassignments
+    scope: mg/slz
 
-baseline_ref:
-  repo: Azure/Azure-Landing-Zones-Library
+baseline:
+  source: https://github.com/Azure/Azure-Landing-Zones-Library
   path: platform/slz/policyAssignments/Deploy-SLZ-Global.alz_policy_assignment.json
   sha: 559a4c86fd57eddd9ee5047fb01a455866bd1cf8
 
-remediation:
-  summary: Assign the SLZ Global policy set at tenant root.
-  template_hint: sovereignty-global-policies
+remediation_template: sovereignty-global-policies
 ```
 
 The fields map one-to-one to [`loaders.Rule`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/loaders.py#L20).
@@ -72,10 +75,10 @@ flowchart LR
         A3["logging (2)"]:::a
         A4["policy (1)"]:::a
         A5["sovereignty (2)"]:::a
-        A6["archetype (8)"]:::a
+        A6["archetype (11)"]:::a
     end
 
-    subgraph Templates["7 AVM templates"]
+    subgraph Templates["8 AVM templates"]
         direction TB
         T1["management-groups"]:::t
         T2["role-assignment"]:::t
@@ -84,6 +87,7 @@ flowchart LR
         T5["sovereignty-global-policies"]:::t
         T6["sovereignty-confidential-policies"]:::t
         T7["archetype-policies"]:::t
+        T8["alz-policy-definitions"]:::t
     end
 
     A1 --> T1
@@ -112,7 +116,7 @@ Severity **does not** change whether Scaffold emits Bicep — only the plan narr
 
 ## Baseline refs
 
-Every rule's `baseline_ref` points at a specific file in the Azure Landing Zones Library at a specific git SHA. Currently all rules pin to SHA `559a4c86fd57eddd9ee5047fb01a455866bd1cf8`.
+Every rule's `baseline` block points at a specific file in the Azure Landing Zones Library at a specific git SHA. The pinned SHA is recorded per rule and verified against the vendored manifest.
 
 The integrity path:
 

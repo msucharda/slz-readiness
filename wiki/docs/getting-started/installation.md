@@ -27,8 +27,8 @@ copilot
 
 Copilot CLI reads [`.github/plugin/plugin.json`](https://github.com/msucharda/slz-readiness/blob/main/.github/plugin/plugin.json) — the packaged plugin manifest. This registers:
 
-- 4 skills: `discover`, `evaluate`, `plan`, `scaffold`
-- 5 slash prompts: `/slz-discover`, `/slz-evaluate`, `/slz-plan`, `/slz-scaffold`, `/slz-run`
+- 5 skills: `discover`, `reconcile`, `evaluate`, `plan`, `scaffold`
+- 6 slash prompts: `/slz-discover`, `/slz-reconcile`, `/slz-evaluate`, `/slz-plan`, `/slz-scaffold`, `/slz-run`
 - 2 MCP servers: `azure` (`@azure/mcp`), `sequential-thinking` (gated to plan + scaffold)
 - 2 hooks: `hooks/pre_tool_use.py`, `hooks/post_tool_use.py`
 - 1 agent definition: `slz-readiness` ([`.github/agents/slz-readiness.agent.md`](https://github.com/msucharda/slz-readiness/blob/main/.github/agents/slz-readiness.agent.md))
@@ -38,7 +38,7 @@ Verify:
 
 ```
 /plugin list
-# Expect: slz-readiness (v0.4.0)
+# Expect: slz-readiness (v0.14.8)
 ```
 
 ### Azure login
@@ -64,19 +64,22 @@ source .venv/bin/activate              # Linux / macOS / WSL
 pip install -e ".[dev]"
 ```
 
-The `pyproject.toml` declares three console scripts ([`pyproject.toml:31-33`](https://github.com/msucharda/slz-readiness/blob/main/pyproject.toml#L31-L33)):
+The `pyproject.toml` declares the phase console scripts ([`pyproject.toml:30-35`](https://github.com/msucharda/slz-readiness/blob/main/pyproject.toml#L30-L35)):
 
 ```toml
 [project.scripts]
 slz-discover = "slz_readiness.discover.cli:main"
+slz-reconcile = "slz_readiness.reconcile.cli:main"
 slz-evaluate = "slz_readiness.evaluate.cli:main"
 slz-scaffold = "slz_readiness.scaffold.cli:main"
+slz-plan-summary = "slz_readiness.plan.summary_cli:main"
 ```
 
 Verify:
 
 ```bash
 slz-discover --help
+slz-reconcile --help
 slz-evaluate --help
 slz-scaffold --help
 pytest -q
@@ -88,7 +91,7 @@ From inside the cloned repo:
 
 ```bash
 copilot
-/plugin install ./.github/plugin
+/plugin install .
 ```
 
 This lets you run `/slz-discover` against your local edits. Combined with `pip install -e`, every code change is picked up immediately.

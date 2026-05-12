@@ -1,5 +1,5 @@
 # Documentation
 
-- `architecture.md` — 4-phase pipeline (Discover → Evaluate → Plan → Scaffold) — **TODO: docs milestone**
-- `anti-hallucination.md` — the 9-control contract — **TODO: docs milestone**
-- `contributing.md` — how to add rules / templates — **TODO: docs milestone**
+- `architecture.md` — 5-phase pipeline (Discover → Reconcile → Evaluate → Plan → Scaffold)
+- `anti-hallucination.md` — the safety contract
+- `brownfield.md` — how `mg_alias.json` retargets existing landing zones

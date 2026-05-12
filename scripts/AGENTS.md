@@ -10,17 +10,19 @@ scripts/
 │   ├── __init__.py         # __version__ lives here
 │   ├── _trace.py           # NDJSON tracer (ContextVar)
 │   ├── discover/           # phase 1
-│   ├── evaluate/           # phase 2
-│   └── scaffold/           # phase 4
+│   ├── reconcile/          # phase 2
+│   ├── evaluate/           # phase 3
+│   ├── plan/               # deterministic plan summary helper
+│   └── scaffold/           # phase 5
 ├── evaluate/
-│   └── rules/              # 14 rule YAMLs (data, not code)
+│   └── rules/              # 18 rule YAMLs (data, not code)
 ├── scaffold/
-│   ├── avm_templates/      # 7 Bicep templates
+│   ├── avm_templates/      # 8 Bicep templates
 │   └── param_schemas/      # JSON Schemas per template
 └── release.py              # version-bump script
 ```
 
-Plan-phase logic lives in [`.github/skills/plan/SKILL.md`](../.github/skills/plan/SKILL.md) — no Python; the LLM does the narration and `hooks/post_tool_use.py` enforces the structure.
+Plan narration lives in [`.github/skills/plan/SKILL.md`](../.github/skills/plan/SKILL.md); `scripts/slz_readiness/plan/summary_cli.py` emits the deterministic plan summary. The LLM does the narration and `hooks/post_tool_use.py` enforces the structure.
 
 ## Package conventions
 
@@ -32,8 +34,8 @@ Plan-phase logic lives in [`.github/skills/plan/SKILL.md`](../.github/skills/pla
 
 ## Adding a discoverer
 
-1. New module `slz_readiness/discover/<area>.py` exposing `def discover(scope) -> list[Finding]`.
-2. Register in `DISCOVERERS` at [`discover/cli.py:24-31`](slz_readiness/discover/cli.py).
+1. New module `slz_readiness/discover/<area>.py` exposing `def discover(...) -> list`.
+2. Register in `DISCOVERERS` in [`discover/cli.py`](slz_readiness/discover/cli.py).
 3. Only call `run_az()`; classify errors via `AzError.kind`.
 4. Extend `tests/unit/test_discover_scope.py` if new CLI flags are introduced.
 
@@ -54,9 +56,10 @@ See [root AGENTS.md](../AGENTS.md) "Adding a template" — touches `scaffold/tem
 pip install -e ../.[dev]
 
 # each phase in isolation
-slz-discover  --tenant <guid> --subscription <sub> --run-id local
-slz-evaluate  --run-id local
-slz-scaffold  --run-id local
+slz-discover  --out artifacts/local/findings.json --tenant <guid> --subscription <sub>
+slz-reconcile --mode greenfield --findings artifacts/local/findings.json --out artifacts/local/mg_alias.json
+slz-evaluate  --findings artifacts/local/findings.json --gaps artifacts/local/gaps.json
+slz-scaffold  --gaps artifacts/local/gaps.json --out artifacts/local
 
 # integrity check for vendored baseline
 python -m slz_readiness.evaluate.baseline_integrity
@@ -66,4 +69,4 @@ python -m slz_readiness.evaluate.baseline_integrity
 
 - Do not import `requests` or any HTTP client in the package — we shell out to `az` for a reason.
 - Do not import LLM SDKs in `evaluate/` or `scaffold/`.
-- Do not read `data/baseline/alz-library/` without going through `loaders.resolve_sha()`.
+- Do not read `data/baseline/alz-library/` without going through the evaluate loader helpers.

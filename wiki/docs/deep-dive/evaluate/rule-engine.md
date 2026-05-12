@@ -87,15 +87,15 @@ stateDiagram-v2
 | Status | Meaning | Scaffold behaviour |
 |---|---|---|
 | (compliant — not emitted) | Rule passed | — |
-| `gap` | Rule failed with concrete observation | Emit Bicep |
+| `missing` / `misconfigured` / drift status | Rule failed with concrete observation | Emit Bicep when scaffoldable; informational drift is narrated only |
 | `unknown` | Rule could not be evaluated (error, missing data) | Skip — no Bicep |
 
 ## Aggregate vs per-resource
 
 Set by `rule.target.mode`:
 
-- **`aggregate`** — the matcher evaluates the whole finding set once. Example: `logging.slz.workspace_exists` asks "does *any* subscription in scope have a workspace?" — one gap or none.
-- **`per_resource`** — the matcher evaluates each finding independently. Example: `archetype.alz_corp.policies` iterates every Corp-matching MG and emits one gap per non-compliant MG.
+- **`aggregate`** — the matcher evaluates the whole selected finding set once. Example: `logging.management_la_workspace_exists` asks "does *any* subscription in scope have a workspace?" — one gap or none.
+- **`per_resource`** — the matcher evaluates each selected resource independently. Example: archetype policy rules emit one gap per non-compliant target MG.
 
 Cite: [`engine.py:51-140`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/evaluate/engine.py#L51-L140).
 
@@ -141,13 +141,13 @@ sequenceDiagram
 
 When a gap carries `status=unknown`, the Plan phase emits a bullet like:
 
-> - [rule_id: logging.slz.workspace_exists] Could not evaluate — permission_denied observed. Grant `Reader` at `/providers/Microsoft.Management/managementGroups/slz-platform` and re-run discover.
+> - (rule_id: logging.management_la_workspace_exists) Could not evaluate — permission_denied observed. Grant `Reader` at the relevant scope and re-run discover.
 
 The Scaffold phase then skips the rule entirely — emitting Bicep from "we don't know" would be a supply-chain footgun.
 
 ## Related reading
 
-- [Matchers](/deep-dive/evaluate/matchers) — the 5 matcher kinds.
-- [Rules Catalog](/deep-dive/evaluate/rules-catalog) — the 14 rules table.
+- [Matchers](/deep-dive/evaluate/matchers) — the matcher kinds.
+- [Rules Catalog](/deep-dive/evaluate/rules-catalog) — the 18 rules table.
 - [Baseline Vendoring](/deep-dive/evaluate/baseline-vendoring) — supply chain.
 - [`docs/anti-hallucination.md`](https://github.com/msucharda/slz-readiness/blob/main/docs/anti-hallucination.md) — why this phase is LLM-free.

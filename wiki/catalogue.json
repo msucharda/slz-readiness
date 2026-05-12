@@ -1,10 +1,10 @@
 {
   "project": {
     "name": "slz-readiness",
-    "version": "0.5.1",
+    "version": "0.14.8",
     "repo": "https://github.com/msucharda/slz-readiness",
     "branch": "main",
-    "description": "4-phase Sovereign Landing Zone readiness audit tool for Azure tenants. Copilot CLI plugin.",
+    "description": "5-phase Sovereign Landing Zone readiness audit tool for Azure tenants. Copilot CLI plugin.",
     "tech_stack": ["Python 3.11+", "Click", "PyYAML", "jsonschema", "Bicep", "AVM", "Azure CLI", "GitHub Copilot CLI"]
   },
   "modules": [
@@ -17,7 +17,7 @@
           "id": "overview",
           "title": "Overview",
           "path": "getting-started/overview.md",
-          "prompt": "Explain what slz-readiness is and the 4-phase pipeline. Reference README.md:1-92 and docs/architecture.md:1-54."
+          "prompt": "Explain what slz-readiness is and the 5-phase pipeline. Reference README.md:1-92 and docs/architecture.md:1-54."
         },
         {
           "id": "installation",
@@ -29,7 +29,7 @@
           "id": "quick-start",
           "title": "Quick Start",
           "path": "getting-started/quick-start.md",
-          "prompt": "Walk the five slash commands with expected outputs. Cite .github/prompts/*.prompt.md and .github/skills/*/SKILL.md."
+          "prompt": "Walk the six slash commands with expected outputs. Cite .github/prompts/*.prompt.md and .github/skills/*/SKILL.md."
         },
         {
           "id": "artifacts",
@@ -48,7 +48,7 @@
           "id": "architecture",
           "title": "Architecture Overview",
           "path": "deep-dive/architecture.md",
-          "prompt": "4 phases, data contracts, anti-hallucination contract. Cite docs/architecture.md, docs/anti-hallucination.md, scripts/slz_readiness/evaluate/models.py."
+          "prompt": "5 phases, data contracts, anti-hallucination contract. Cite docs/architecture.md, docs/anti-hallucination.md, scripts/slz_readiness/evaluate/models.py."
         },
         {
           "id": "plugin-mechanics",
@@ -86,9 +86,9 @@
             },
             {
               "id": "discoverers",
-              "title": "Discoverers (6 modules)",
+              "title": "Discoverers (7 modules)",
               "path": "deep-dive/discover/discoverers.md",
-              "prompt": "mg_hierarchy, subscription_inventory, policy_assignments, identity_rbac, logging_monitoring, sovereignty_controls. Cite discover/*.py."
+              "prompt": "mg_hierarchy, subscription_inventory, policy_assignments, custom_initiatives, identity_rbac, logging_monitoring, sovereignty_controls. Cite discover/*.py."
             },
             {
               "id": "az-wrapper",
@@ -100,7 +100,7 @@
         },
         {
           "id": "evaluate",
-          "title": "Phase 2: Evaluate",
+          "title": "Phase 3: Evaluate",
           "children": [
             {
               "id": "rule-engine",
@@ -130,13 +130,13 @@
         },
         {
           "id": "plan",
-          "title": "Phase 3: Plan",
+          "title": "Phase 4: Plan",
           "path": "deep-dive/plan.md",
           "prompt": "LLM narration, citation guard, sequential-thinking MCP, design-area grouping. Cite .github/skills/plan/SKILL.md, hooks/post_tool_use.py."
         },
         {
           "id": "scaffold",
-          "title": "Phase 4: Scaffold",
+          "title": "Phase 5: Scaffold",
           "children": [
             {
               "id": "scaffold-engine",
@@ -148,7 +148,7 @@
               "id": "avm-templates",
               "title": "AVM Bicep Templates",
               "path": "deep-dive/scaffold/avm-templates.md",
-              "prompt": "7 templates in scripts/scaffold/avm_templates/ + schemas. Cite each .bicep file, each .schema.json."
+              "prompt": "8 templates in scripts/scaffold/avm_templates/ + schemas. Cite each .bicep file, each .schema.json."
             }
           ]
         },
@@ -162,7 +162,7 @@
           "id": "release",
           "title": "Release Process",
           "path": "deep-dive/release-process.md",
-          "prompt": "scripts/release.py bumps four files; release.yml verifies tag; zip packaging. Cite scripts/release.py:1-125, .github/workflows/release.yml."
+          "prompt": "scripts/release.py bumps all version files; release.yml verifies tag; zip packaging. Cite scripts/release.py:1-125, .github/workflows/release.yml."
         },
         {
           "id": "testing",

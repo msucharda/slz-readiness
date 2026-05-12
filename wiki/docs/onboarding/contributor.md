@@ -129,7 +129,7 @@ This loads the packaged plugin format at [`.github/plugin/plugin.json`](https://
 
 ## The 5-minute mental model
 
-Four phases. Two of them are **deterministic** (Discover, Evaluate, Scaffold). One is **LLM-narrated** (Plan). You can test 75% of the code without ever touching an LLM.
+Five phases. Evaluate and Scaffold are deterministic Python paths; Reconcile's CLI is a deterministic schema-gated writer; Plan is LLM-narrated. Most code can be tested without touching an LLM.
 
 ```mermaid
 flowchart TB
@@ -137,25 +137,29 @@ flowchart TB
         P1["discover/cli.py"] --> P1A["mg_hierarchy.py"]
         P1 --> P1B["subscription_inventory.py"]
         P1 --> P1C["policy_assignments.py"]
+        P1 --> P1G["custom_initiatives.py"]
         P1 --> P1D["identity_rbac.py"]
         P1 --> P1E["logging_monitoring.py"]
         P1 --> P1F["sovereignty_controls.py"]
-        P1A & P1B & P1C & P1D & P1E & P1F --> P1O["findings.json"]
+        P1A & P1B & P1C & P1D & P1E & P1F & P1G --> P1O["findings.json"]
     end
 
-    subgraph Phase2["Phase 2: Evaluate — pure Python"]
+    subgraph Phase2["Phase 2: Reconcile — alias map"]
+        R1["reconcile/cli.py"] --> R2["mg_alias.json"]
+    end
+    subgraph Phase3["Phase 3: Evaluate — pure Python"]
         P2["engine.py"] --> P2M["matchers.py"]
         P2L["loaders.py"] --> P2
         P2R["scripts/evaluate/rules/*.yml"] --> P2L
         P2 --> P2O["gaps.json"]
     end
 
-    subgraph Phase3["Phase 3: Plan — LLM + citation guard"]
+    subgraph Phase4["Phase 4: Plan — LLM + citation guard"]
         P3["plan.prompt.md"] --> P3H["post_tool_use.py strips uncited bullets"]
         P3H --> P3O["plan.md"]
     end
 
-    subgraph Phase4["Phase 4: Scaffold — template registry"]
+    subgraph Phase5["Phase 5: Scaffold — template registry"]
         P4["scaffold/engine.py"] --> P4R["template_registry.py"]
         P4R --> P4T["avm_templates/*.bicep"]
         P4 --> P4O["bicep/*.bicep + params/*.json"]
@@ -224,7 +228,7 @@ flowchart LR
 | `.github/skills/discover/` | Add a new discoverer | `SKILL.md` |
 | `.github/skills/evaluate/` | Add a new rule | `SKILL.md` |
 | `hooks/` | Understand safety guards | `pre_tool_use.py`, `post_tool_use.py` |
-| `scripts/slz_readiness/discover/` | Change how Azure is queried | `cli.py`, `az_common.py`, `*.py` (6 modules) |
+| `scripts/slz_readiness/discover/` | Change how Azure is queried | `cli.py`, `az_common.py`, `*.py` (7 modules) |
 | `scripts/slz_readiness/evaluate/` | Change the rule engine | `engine.py`, `matchers.py`, `loaders.py`, `models.py` |
 | `scripts/slz_readiness/scaffold/` | Change Bicep emission | `engine.py`, `template_registry.py` |
 | `scripts/evaluate/rules/` | Add/edit a rule (YAML only!) | `<design_area>/<rule_id>.yml` |
@@ -498,7 +502,7 @@ Then tags `vX.Y.Z` and pushes. The [`release.yml`](https://github.com/msucharda/
 | Calling a write-verb `az` command | Hook blocks with `denied: verb 'create' not allowed` | That's the hook doing its job. Route through scaffold → user deploys. |
 | Forgetting `baseline_ref` in a rule | `rules-resolve` CI fails | Every rule needs `source`, `path`, `sha` (leave `sha` blank; `resolve_sha()` fills it). |
 | Non-deterministic test | `test_evaluate_golden` passes locally, fails in CI | You iterated a `set` or `dict` without sorting. Engine output is always `sorted(..., key=lambda g: (g.rule_id, g.resource_id))`. |
-| Adding a Plan-phase bullet without citation | Post-hook moves it to `plan.dropped.md` | Start every bullet with `- [rule_id: X]`. The regex is strict. |
+| Adding a Plan-phase bullet without citation | Post-hook moves it to `plan.dropped.md` | Cite every bullet with `(rule_id: X)`. The regex is strict. |
 | Shelling out from Python directly | Skips the hook | Use `run_az` from [`az_common.py`](https://github.com/msucharda/slz-readiness/blob/main/scripts/slz_readiness/discover/az_common.py). It's instrumented. |
 | Committing a secret into `findings.json` | Bad day | Gitignore includes `artifacts/`. If it leaks, rotate immediately. |
 | Editing `data/baseline/` by hand | `baseline-integrity` CI fails — SHA mismatch | Never edit vendored baseline. Use `vendor_baseline.py` to refresh, and update the pinned SHA in `VERSIONS.json`. |
